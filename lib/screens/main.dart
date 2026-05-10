@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'search_customer.dart';
+import 'search_product.dart';
+
 void main() {
   runApp(const POSApp());
 }
@@ -42,6 +45,7 @@ class _POSScreenState extends State<POSScreen> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final List<CartItem> _cartItems = [];
+  Customer? _selectedCustomer;
 
   // Sample product catalog
   final List<Map<String, dynamic>> _products = [
@@ -133,6 +137,7 @@ class _POSScreenState extends State<POSScreen> {
             _cartItems.clear();
             _nameController.clear();
             _phoneController.clear();
+            _selectedCustomer = null;
           });
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -147,6 +152,26 @@ class _POSScreenState extends State<POSScreen> {
           );
         },
       ),
+    );
+  }
+
+  Future<void> _openCustomerSearch() async {
+    final customer = await Navigator.of(context).push<Customer>(
+      MaterialPageRoute(builder: (_) => const SearchCustomerScreen()),
+    );
+    if (!mounted) return;
+    if (customer != null) {
+      setState(() {
+        _selectedCustomer = customer;
+        _nameController.text = customer.name;
+        _phoneController.text = customer.phone;
+      });
+    }
+  }
+
+  Future<void> _openProductSearch() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SearchProductScreen()),
     );
   }
 
@@ -169,6 +194,8 @@ class _POSScreenState extends State<POSScreen> {
             invoiceNumber: _invoiceNumber,
             nameController: _nameController,
             phoneController: _phoneController,
+            selectedCustomer: _selectedCustomer,
+            onCashCustomerTap: _openCustomerSearch,
           ),
 
           // ── Body ────────────────────────────────────────────────
@@ -195,9 +222,14 @@ class _POSScreenState extends State<POSScreen> {
                     const SizedBox(height: 10),
 
                     // Search bar
-                    _SearchBar(
-                      controller: _searchController,
-                      onChanged: _onSearchChanged,
+                    GestureDetector(
+                      onTap: _openProductSearch,
+                      child: AbsorbPointer(
+                        child: _SearchBar(
+                          controller: _searchController,
+                          onChanged: _onSearchChanged,
+                        ),
+                      ),
                     ),
 
                     // Suggestions dropdown
@@ -240,11 +272,15 @@ class _Header extends StatelessWidget {
   final String invoiceNumber;
   final TextEditingController nameController;
   final TextEditingController phoneController;
+  final Customer? selectedCustomer;
+  final VoidCallback onCashCustomerTap;
 
   const _Header({
     required this.invoiceNumber,
     required this.nameController,
     required this.phoneController,
+    required this.onCashCustomerTap,
+    this.selectedCustomer,
   });
 
   @override
@@ -280,45 +316,49 @@ class _Header extends StatelessWidget {
               const SizedBox(height: 14),
 
               // Customer card
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
-                            'Cash Customer',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF1A1A2E),
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Cust-00000',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF8E8E93),
-                            ),
-                          ),
-                        ],
-                      ),
+              Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onCashCustomerTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
                     ),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF8E8E93),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                selectedCustomer?.name ?? 'Cash Customer',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1A1A2E),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                selectedCustomer?.code ?? 'Cust-00000',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF8E8E93),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF8E8E93),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
