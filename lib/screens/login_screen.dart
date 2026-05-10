@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
+import 'main.dart' show POSScreen;
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -13,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen>
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  final _authService = AuthService();
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
 
@@ -42,12 +46,16 @@ class _LoginScreenState extends State<LoginScreen>
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _authService.close();
     _animController.dispose();
     super.dispose();
   }
 
-  void _handleLogin() async {
-    if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
+  Future<void> _handleLogin() async {
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+
+    if (username.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter username and password'),
@@ -57,12 +65,46 @@ class _LoginScreenState extends State<LoginScreen>
       );
       return;
     }
+
     setState(() => _isLoading = true);
-    // TODO: Replace with your real API call
-    await Future.delayed(const Duration(seconds: 2));
-    setState(() => _isLoading = false);
-    // TODO: Navigate to home screen
-    // Navigator.pushReplacementNamed(context, '/home');
+
+    try {
+      final user = await _authService.login(
+        username: username,
+        password: password,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Login successful. Welcome ${user.fullname}'),
+          backgroundColor: kAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (context) => const POSScreen(),
+        ),
+        (route) => false,
+      );
+    } on AuthException catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
