@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/product.dart';
+import 'quantity_bottom_sheet.dart';
 import 'search_customer.dart';
 import 'search_product.dart';
 
@@ -40,6 +41,33 @@ class CartItem {
     this.code,
     this.quantity = 1,
   });
+}
+
+String formatAmount(num value, {bool keepTwoDecimals = false}) {
+  final isWhole = value % 1 == 0;
+  final raw = keepTwoDecimals || !isWhole
+      ? value.toStringAsFixed(2)
+      : value.toStringAsFixed(0);
+  final parts = raw.split('.');
+  var intPart = parts.first;
+  final sign = intPart.startsWith('-') ? '-' : '';
+  if (sign.isNotEmpty) intPart = intPart.substring(1);
+
+  if (intPart.length > 3) {
+    final last3 = intPart.substring(intPart.length - 3);
+    var lead = intPart.substring(0, intPart.length - 3);
+    final groups = <String>[];
+    while (lead.length > 2) {
+      groups.insert(0, lead.substring(lead.length - 2));
+      lead = lead.substring(0, lead.length - 2);
+    }
+    if (lead.isNotEmpty) groups.insert(0, lead);
+    intPart = '${groups.join(',')},$last3';
+  }
+
+  return sign +
+      intPart +
+      ((parts.length > 1 && (keepTwoDecimals || !isWhole)) ? '.${parts[1]}' : '');
 }
 
 class POSScreen extends StatefulWidget {
@@ -128,7 +156,8 @@ class _POSScreenState extends State<POSScreen> {
     });
   }
 
-  void _addProductFromSearch(Product product) {
+  void _addProductFromSearch(Product product, {int quantity = 1}) {
+    if (quantity < 1) return;
     setState(() {
       final existing = _cartItems.firstWhere(
         (item) => product.code.isNotEmpty
@@ -137,13 +166,14 @@ class _POSScreenState extends State<POSScreen> {
         orElse: () => CartItem(name: '', price: 0),
       );
       if (existing.name.isNotEmpty) {
-        existing.quantity++;
+        existing.quantity += quantity;
       } else {
         _cartItems.add(
           CartItem(
             name: product.name,
             price: product.price,
             code: product.code.isEmpty ? null : product.code,
+            quantity: quantity,
           ),
         );
       }
@@ -157,6 +187,29 @@ class _POSScreenState extends State<POSScreen> {
       } else {
         _cartItems.removeAt(index);
       }
+    });
+  }
+
+  Future<void> _editCartItemQuantity(int index) async {
+    if (index < 0 || index >= _cartItems.length) return;
+    final item = _cartItems[index];
+    final qty = await showQuantitySheet(
+      context,
+      product: Product(
+        name: item.name,
+        code: item.code ?? '',
+        stock: 0,
+        price: item.price,
+      ),
+      initialQuantity: item.quantity,
+      actionText: 'Update item',
+      detailsText: item.code != null && item.code!.isNotEmpty
+          ? 'Code: ${item.code}'
+          : 'Cart item',
+    );
+    if (!mounted || qty == null) return;
+    setState(() {
+      _cartItems[index].quantity = qty;
     });
   }
 
@@ -208,11 +261,12 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   Future<void> _openProductSearch() async {
-    final product = await Navigator.of(context).push<Product>(
-      MaterialPageRoute(builder: (_) => const SearchProductScreen()),
-    );
-    if (!mounted || product == null) return;
-    _addProductFromSearch(product);
+    final result =
+        await Navigator.of(context).push<({Product product, int quantity})>(
+          MaterialPageRoute(builder: (_) => const SearchProductScreen()),
+        );
+    if (!mounted || result == null) return;
+    _addProductFromSearch(result.product, quantity: result.quantity);
   }
 
   @override
@@ -226,7 +280,7 @@ class _POSScreenState extends State<POSScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: const Color(0xFFF6F6F7),
       body: Column(
         children: [
           // ── Header ──────────────────────────────────────────────
@@ -289,7 +343,11 @@ class _POSScreenState extends State<POSScreen> {
                     // Cart items or empty state
                     _cartItems.isEmpty
                         ? const _EmptyState()
-                        : _CartList(items: _cartItems, onRemove: _removeItem),
+                        : _CartList(
+                            items: _cartItems,
+                            onRemove: _removeItem,
+                            onTapItem: _editCartItemQuantity,
+                          ),
 
                     const SizedBox(height: 120),
                   ],
@@ -691,8 +749,13 @@ class _EmptyState extends StatelessWidget {
 class _CartList extends StatelessWidget {
   final List<CartItem> items;
   final ValueChanged<int> onRemove;
+  final ValueChanged<int> onTapItem;
 
-  const _CartList({required this.items, required this.onRemove});
+  const _CartList({
+    required this.items,
+    required this.onRemove,
+    required this.onTapItem,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -700,96 +763,95 @@ class _CartList extends StatelessWidget {
       children: items.asMap().entries.map((entry) {
         final i = entry.key;
         final item = entry.value;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Icon
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F0F5),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.inventory_2_outlined,
-                  size: 20,
-                  color: Color(0xFF3D1A2E),
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => onTapItem(i),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(0, 14, 0, 14),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFECECEC), width: 1),
                 ),
               ),
-              const SizedBox(width: 12),
-
-              // Name + price
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A2E),
-                      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 33 / 2,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF202124),
+                              height: 1.2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => onRemove(i),
+                          child: const Icon(
+                            Icons.delete_outline,
+                            color: Color(0xFFDA4F45),
+                            size: 20,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
                       item.code != null && item.code!.isNotEmpty
-                          ? 'Code: ${item.code} · ৳${item.price.toStringAsFixed(2)} × ${item.quantity}'
-                          : '৳${item.price.toStringAsFixed(2)} × ${item.quantity}',
+                          ? 'Code: ${item.code} | UOM: Pcs'
+                          : 'UOM: Pcs',
                       style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF8E8E93),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF6F7277),
                       ),
                     ),
-                  ],
-                ),
-              ),
-
-              // Subtotal
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '৳${(item.price * item.quantity).toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1A1A2E),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF2F3F5),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'Qty: ${item.quantity.toString().padLeft(2, '0')}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF555B65),
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          'TK ${(item.price * item.quantity).toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1B1D22),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  GestureDetector(
-                    onTap: () => onRemove(i),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFEEEE),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Icon(
-                        Icons.remove,
-                        size: 14,
-                        color: Color(0xFFE53935),
-                      ),
-                    ),
-                  ),
                 ],
               ),
-            ],
+            ),
           ),
         );
       }).toList(),
@@ -816,7 +878,7 @@ class _BottomBar extends StatelessWidget {
     final bool active = onCheckout != null;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFAFAFA),
         borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(24),
           topRight: Radius.circular(24),
@@ -841,16 +903,16 @@ class _BottomBar extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Total Payment ($totalItems Items)',
+                    'Total Payable ($totalItems Items)',
                     style: const TextStyle(
                       fontSize: 14,
                       color: Color(0xFF8E8E93),
                     ),
                   ),
                   Text(
-                    '৳ ${totalPayable.toStringAsFixed(2)}',
+                    '৳ ${formatAmount(totalPayable)}',
                     style: TextStyle(
-                      fontSize: 22,
+                      fontSize: 38 / 2,
                       fontWeight: FontWeight.w800,
                       color: active
                           ? const Color(0xFF1A1A2E)

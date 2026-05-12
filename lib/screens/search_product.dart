@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 
 import '../models/product.dart';
 import '../services/inventory_service.dart';
+import 'quantity_bottom_sheet.dart'; // ← new import
 
 class SearchProductScreen extends StatefulWidget {
-  /// Called when the user taps a product. Receives the selected [Product].
-  final ValueChanged<Product>? onProductSelected;
+  /// Called when the user confirms a product + quantity.
+  /// Receives the selected [Product] and the chosen [quantity].
+  final void Function(Product product, int quantity)? onProductSelected;
 
   const SearchProductScreen({super.key, this.onProductSelected});
 
@@ -129,6 +131,35 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
   }
 
   Future<void> _retry() => _fetch(append: false);
+
+  // ── product tap handler ────────────────────────────────────────────────────
+
+  Future<void> _onProductTap(Product product) async {
+    // Unfocus keyboard before showing sheet so it doesn't fight the numpad
+    _focusNode.unfocus();
+
+    final qty = await showQuantitySheet(context, product: product);
+
+    if (qty == null || !mounted) return; // user dismissed
+
+    void completeSelection() {
+      if (!mounted) return;
+      if (widget.onProductSelected != null) {
+        widget.onProductSelected!(product, qty);
+      } else {
+        Navigator.of(context).pop((product: product, quantity: qty));
+      }
+    }
+
+    // Second route.pop must run after the modal sheet's pop finishes; otherwise
+    // Navigator can assert !_debugLocked (navigator.dart).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      completeSelection();
+    });
+  }
+
+  // ── build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -332,20 +363,19 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
             ),
           );
         }
+        final product = _items[index];
         return _ProductTile(
-          product: _items[index],
-          onTap: () {
-            final p = _items[index];
-            widget.onProductSelected?.call(p);
-            if (widget.onProductSelected == null) {
-              Navigator.of(context).pop<Product>(p);
-            }
-          },
+          product: product,
+          onTap: () => _onProductTap(product), // ← updated
         );
       },
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _ProductTile  (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _ProductTile extends StatelessWidget {
   final Product product;
