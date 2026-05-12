@@ -223,7 +223,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
                   const _Divider(),
 
-                  const SizedBox(height: 80), // breathing room above bottom bar
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
@@ -231,8 +231,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         ],
       ),
 
-      // ── Print receipt bar ─────────────────────────────────────────────────
-      bottomSheet: _PrintBar(onPrint: widget.onPrintReceipt),
+      bottomNavigationBar: _PrintBar(onPrint: widget.onPrintReceipt),
     );
   }
 }
@@ -551,41 +550,48 @@ class _PrintBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F8F9),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 16,
-            offset: const Offset(0, -3),
-          ),
-        ],
-      ),
+    return Material(
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-          child: SizedBox(
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed: onPrint,
-              icon: const Icon(Icons.print_outlined, size: 20),
-              label: const Text(
-                'Print receipt',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.1,
-                ),
+        bottom: true,
+        left: true,
+        right: true,
+        minimum: EdgeInsets.zero,
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F8F9),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 16,
+                offset: const Offset(0, -3),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D1117),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: SizedBox(
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: onPrint,
+                icon: const Icon(Icons.print_outlined, size: 20),
+                label: const Text(
+                  'Print receipt',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D1117),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),

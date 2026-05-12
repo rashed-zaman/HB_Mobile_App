@@ -280,53 +280,61 @@ class _POSScreenState extends State<POSScreen> {
             onCashCustomerTap: _openCustomerSearch,
           ),
           Expanded(
-            child: GestureDetector(
-              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-              behavior: HitTestBehavior.translucent,
-              child: SingleChildScrollView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                physics: const BouncingScrollPhysics(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Product Entry',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1A1A2E),
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: _openProductSearch,
-                        child: AbsorbPointer(
-                          child: _SearchBar(
-                            controller: _searchController,
-                            onChanged: _onSearchChanged,
+            child: SafeArea(
+              top: false,
+              // Bottom inset is handled by bottomNavigationBar + _BottomBar safe area
+              bottom: false,
+              left: true,
+              right: true,
+              minimum: EdgeInsets.zero,
+              child: GestureDetector(
+                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                behavior: HitTestBehavior.translucent,
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  physics: const BouncingScrollPhysics(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Product Entry',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A2E),
+                            letterSpacing: -0.3,
                           ),
                         ),
-                      ),
-                      if (_showSuggestions)
-                        _SuggestionsDropdown(
-                          products: _filteredProducts,
-                          onSelect: _addToCart,
-                        ),
-                      const SizedBox(height: 16),
-                      _cartItems.isEmpty
-                          ? const _EmptyState()
-                          : _CartList(
-                              items: _cartItems,
-                              onRemove: _removeItem,
-                              onTapItem: _editCartItemQuantity,
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: _openProductSearch,
+                          child: AbsorbPointer(
+                            child: _SearchBar(
+                              controller: _searchController,
+                              onChanged: _onSearchChanged,
                             ),
-                      const SizedBox(height: 120),
-                    ],
+                          ),
+                        ),
+                        if (_showSuggestions)
+                          _SuggestionsDropdown(
+                            products: _filteredProducts,
+                            onSelect: _addToCart,
+                          ),
+                        const SizedBox(height: 16),
+                        _cartItems.isEmpty
+                            ? const _EmptyState()
+                            : _CartList(
+                                items: _cartItems,
+                                onRemove: _removeItem,
+                                onTapItem: _editCartItemQuantity,
+                              ),
+                        const SizedBox(height: 120),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -334,7 +342,8 @@ class _POSScreenState extends State<POSScreen> {
           ),
         ],
       ),
-      bottomSheet: _BottomBar(
+      // Dock above system home-indicator / gesture bar (see _BottomBar SafeArea)
+      bottomNavigationBar: _BottomBar(
         totalItems: _totalItems,
         totalPayable: _totalPayable,
         onCheckout: _cartItems.isNotEmpty ? _checkout : null,
@@ -376,7 +385,11 @@ class _Header extends StatelessWidget {
         ),
       ),
       child: SafeArea(
+        top: true,
         bottom: false,
+        left: true,
+        right: true,
+        minimum: EdgeInsets.zero,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           child: Column(
@@ -719,8 +732,8 @@ class _CartList extends StatelessWidget {
             onTap: () => onTapItem(i),
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.fromLTRB(0, 14, 0, 14),
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.fromLTRB(0, 10, 0, 10),
               decoration: const BoxDecoration(
                 border: Border(
                     bottom: BorderSide(
@@ -729,6 +742,7 @@ class _CartList extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Line 1: product name + delete
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -738,54 +752,70 @@ class _CartList extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 33 / 2,
+                            fontSize: 15,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF202124),
                             height: 1.2,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       GestureDetector(
                         onTap: () => onRemove(i),
                         child: const Icon(Icons.delete_outline,
-                            color: Color(0xFFDA4F45), size: 20),
+                            color: Color(0xFFDA4F45), size: 18),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    item.code != null && item.code!.isNotEmpty
-                        ? 'Code: ${item.code} | UOM: Pcs'
-                        : 'UOM: Pcs',
-                    style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Color(0xFF6F7277)),
-                  ),
-                  const SizedBox(height: 10),
+                  // Line 2: code / UOM + qty chip + line total
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF2F3F5),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'Qty: ${item.quantity.toString().padLeft(2, '0')}',
-                          style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF555B65)),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.code != null && item.code!.isNotEmpty
+                                    ? 'Code: ${item.code} | UOM: Pcs'
+                                    : 'UOM: Pcs',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: Color(0xFF6F7277),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF2F3F5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Qty: ${item.quantity.toString().padLeft(2, '0')}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF555B65),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       Text(
                         'TK ${(item.price * item.quantity).toStringAsFixed(2)}',
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF1B1D22),
                         ),
@@ -819,75 +849,82 @@ class _BottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool active = onCheckout != null;
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFAFAFA),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 24,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
+    return Material(
+      color: Colors.transparent,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total Payable ($totalItems Items)',
-                    style: const TextStyle(
-                        fontSize: 14, color: Color(0xFF8E8E93)),
-                  ),
-                  Text(
-                    '৳ ${formatAmount(totalPayable)}',
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      color: active
-                          ? const Color(0xFF1A1A2E)
-                          : const Color(0xFF8E8E93),
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton.icon(
-                  onPressed: onCheckout,
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                  label: const Text(
-                    'Checkout',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: active
-                        ? const Color(0xFF1A1A2E)
-                        : const Color(0xFFD1D1D6),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                ),
+        bottom: true,
+        left: true,
+        right: true,
+        minimum: EdgeInsets.zero,
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFFAFAFA),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 24,
+                offset: const Offset(0, -4),
               ),
             ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total Payable ($totalItems Items)',
+                      style: const TextStyle(
+                          fontSize: 14, color: Color(0xFF8E8E93)),
+                    ),
+                    Text(
+                      '৳ ${formatAmount(totalPayable)}',
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: active
+                            ? const Color(0xFF1A1A2E)
+                            : const Color(0xFF8E8E93),
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: onCheckout,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                    label: const Text(
+                      'Checkout',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: active
+                          ? const Color(0xFF1A1A2E)
+                          : const Color(0xFFD1D1D6),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
