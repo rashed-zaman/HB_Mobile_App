@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/product.dart';
+import 'payment_screen.dart';          // ← new
 import 'quantity_bottom_sheet.dart';
 import 'search_customer.dart';
 import 'search_product.dart';
@@ -31,7 +32,6 @@ class POSApp extends StatelessWidget {
 class CartItem {
   final String name;
   final double price;
-  /// Inventory / barcode id when added from API search; used to merge lines.
   final String? code;
   int quantity;
 
@@ -84,7 +84,6 @@ class _POSScreenState extends State<POSScreen> {
   final List<CartItem> _cartItems = [];
   Customer? _selectedCustomer;
 
-  // Sample product catalog
   final List<Map<String, dynamic>> _products = [
     {'name': 'Rice (1kg)', 'price': 65.0, 'barcode': '8901234567890'},
     {'name': 'Cooking Oil (1L)', 'price': 185.0, 'barcode': '8901234567891'},
@@ -99,7 +98,8 @@ class _POSScreenState extends State<POSScreen> {
   double get _totalPayable =>
       _cartItems.fold(0, (sum, item) => sum + item.price * item.quantity);
 
-  int get _totalItems => _cartItems.fold(0, (sum, item) => sum + item.quantity);
+  int get _totalItems =>
+      _cartItems.fold(0, (sum, item) => sum + item.quantity);
 
   String get _invoiceNumber {
     if (_cartItems.isEmpty) return '---';
@@ -118,9 +118,7 @@ class _POSScreenState extends State<POSScreen> {
     final results = _products
         .where(
           (p) =>
-              p['name'].toString().toLowerCase().contains(
-                value.toLowerCase(),
-              ) ||
+              p['name'].toString().toLowerCase().contains(value.toLowerCase()) ||
               p['barcode'].toString().contains(value),
         )
         .toList();
@@ -142,13 +140,11 @@ class _POSScreenState extends State<POSScreen> {
       if (existing.name.isNotEmpty) {
         existing.quantity++;
       } else {
-        _cartItems.add(
-          CartItem(
-            name: product['name'] as String,
-            price: (product['price'] as num).toDouble(),
-            code: barcode.isEmpty ? null : barcode,
-          ),
-        );
+        _cartItems.add(CartItem(
+          name: product['name'] as String,
+          price: (product['price'] as num).toDouble(),
+          code: barcode.isEmpty ? null : barcode,
+        ));
       }
       _showSuggestions = false;
       _searchController.clear();
@@ -168,14 +164,12 @@ class _POSScreenState extends State<POSScreen> {
       if (existing.name.isNotEmpty) {
         existing.quantity += quantity;
       } else {
-        _cartItems.add(
-          CartItem(
-            name: product.name,
-            price: product.price,
-            code: product.code.isEmpty ? null : product.code,
-            quantity: quantity,
-          ),
-        );
+        _cartItems.add(CartItem(
+          name: product.name,
+          price: product.price,
+          code: product.code.isEmpty ? null : product.code,
+          quantity: quantity,
+        ));
       }
     });
   }
@@ -208,40 +202,37 @@ class _POSScreenState extends State<POSScreen> {
           : 'Cart item',
     );
     if (!mounted || qty == null) return;
-    setState(() {
-      _cartItems[index].quantity = qty;
-    });
+    setState(() => _cartItems[index].quantity = qty);
   }
 
+  // ── Checkout → Loading → PaymentScreen ─────────────────────────────────────
   void _checkout() {
     if (_cartItems.isEmpty) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _CheckoutSheet(
-        items: _cartItems,
-        total: _totalPayable,
-        customerName: _nameController.text,
-        onConfirm: () {
-          setState(() {
-            _cartItems.clear();
-            _nameController.clear();
-            _phoneController.clear();
-            _selectedCustomer = null;
-          });
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('✓ Invoice created successfully'),
-              backgroundColor: const Color(0xFF2ECC71),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
-        },
+    final invoice = _invoiceNumber;
+    final items = List<CartItem>.from(_cartItems);
+    final total = _totalPayable;
+    final totalItems = _totalItems;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _CheckoutLoadingScreen(
+          onComplete: () {
+            if (!mounted) return;
+            setState(() {
+              _cartItems.clear();
+              _nameController.clear();
+              _phoneController.clear();
+              _selectedCustomer = null;
+            });
+          },
+          // Build the destination after loading animation
+          destinationBuilder: (onPrint) => PaymentScreen(   // ← new
+            invoiceNumber: invoice,
+            itemCount: totalItems,
+            totalBill: total,
+            onPrintReceipt: onPrint,
+          ),
+        ),
       ),
     );
   }
@@ -250,21 +241,19 @@ class _POSScreenState extends State<POSScreen> {
     final customer = await Navigator.of(context).push<Customer>(
       MaterialPageRoute(builder: (_) => const SearchCustomerScreen()),
     );
-    if (!mounted) return;
-    if (customer != null) {
-      setState(() {
-        _selectedCustomer = customer;
-        _nameController.text = customer.name;
-        _phoneController.text = customer.phone;
-      });
-    }
+    if (!mounted || customer == null) return;
+    setState(() {
+      _selectedCustomer = customer;
+      _nameController.text = customer.name;
+      _phoneController.text = customer.phone;
+    });
   }
 
   Future<void> _openProductSearch() async {
     final result =
         await Navigator.of(context).push<({Product product, int quantity})>(
-          MaterialPageRoute(builder: (_) => const SearchProductScreen()),
-        );
+      MaterialPageRoute(builder: (_) => const SearchProductScreen()),
+    );
     if (!mounted || result == null) return;
     _addProductFromSearch(result.product, quantity: result.quantity);
   }
@@ -283,7 +272,6 @@ class _POSScreenState extends State<POSScreen> {
       backgroundColor: const Color(0xFFF6F6F7),
       body: Column(
         children: [
-          // ── Header ──────────────────────────────────────────────
           _Header(
             invoiceNumber: _invoiceNumber,
             nameController: _nameController,
@@ -291,75 +279,61 @@ class _POSScreenState extends State<POSScreen> {
             selectedCustomer: _selectedCustomer,
             onCashCustomerTap: _openCustomerSearch,
           ),
-
-          // ── Body (tap empty area / scroll to dismiss keyboard) ───
           Expanded(
             child: GestureDetector(
               onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
               behavior: HitTestBehavior.translucent,
               child: SingleChildScrollView(
-              keyboardDismissBehavior:
-                  ScrollViewKeyboardDismissBehavior.onDrag,
-              physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 20),
-
-                    // Product Entry label
-                    const Text(
-                      'Product Entry',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1A1A2E),
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Search bar
-                    GestureDetector(
-                      onTap: _openProductSearch,
-                      child: AbsorbPointer(
-                        child: _SearchBar(
-                          controller: _searchController,
-                          onChanged: _onSearchChanged,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const BouncingScrollPhysics(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Product Entry',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1A1A2E),
+                          letterSpacing: -0.3,
                         ),
                       ),
-                    ),
-
-                    // Suggestions dropdown
-                    if (_showSuggestions)
-                      _SuggestionsDropdown(
-                        products: _filteredProducts,
-                        onSelect: _addToCart,
-                      ),
-
-                    const SizedBox(height: 16),
-
-                    // Cart items or empty state
-                    _cartItems.isEmpty
-                        ? const _EmptyState()
-                        : _CartList(
-                            items: _cartItems,
-                            onRemove: _removeItem,
-                            onTapItem: _editCartItemQuantity,
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: _openProductSearch,
+                        child: AbsorbPointer(
+                          child: _SearchBar(
+                            controller: _searchController,
+                            onChanged: _onSearchChanged,
                           ),
-
-                    const SizedBox(height: 120),
-                  ],
+                        ),
+                      ),
+                      if (_showSuggestions)
+                        _SuggestionsDropdown(
+                          products: _filteredProducts,
+                          onSelect: _addToCart,
+                        ),
+                      const SizedBox(height: 16),
+                      _cartItems.isEmpty
+                          ? const _EmptyState()
+                          : _CartList(
+                              items: _cartItems,
+                              onRemove: _removeItem,
+                              onTapItem: _editCartItemQuantity,
+                            ),
+                      const SizedBox(height: 120),
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
           ),
         ],
       ),
-
-      // ── Bottom Checkout Bar ──────────────────────────────────────
       bottomSheet: _BottomBar(
         totalItems: _totalItems,
         totalPayable: _totalPayable,
@@ -370,7 +344,7 @@ class _POSScreenState extends State<POSScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Header Widget
+// Header
 // ─────────────────────────────────────────────────────────────
 class _Header extends StatelessWidget {
   final String invoiceNumber;
@@ -407,7 +381,6 @@ class _Header extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           child: Column(
             children: [
-              // Invoice number
               Text(
                 'Invoice no: $invoiceNumber',
                 style: const TextStyle(
@@ -418,8 +391,6 @@ class _Header extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-
-              // Customer card
               Material(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
@@ -428,9 +399,7 @@ class _Header extends StatelessWidget {
                   onTap: onCashCustomerTap,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
+                        horizontal: 16, vertical: 14),
                     child: Row(
                       children: [
                         Expanded(
@@ -456,18 +425,14 @@ class _Header extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const Icon(
-                          Icons.chevron_right_rounded,
-                          color: Color(0xFF8E8E93),
-                        ),
+                        const Icon(Icons.chevron_right_rounded,
+                            color: Color(0xFF8E8E93)),
                       ],
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 10),
-
-              // Name + Phone row
               Row(
                 children: [
                   Expanded(
@@ -487,11 +452,9 @@ class _Header extends StatelessWidget {
                       icon: Icons.phone_outlined,
                       hint: 'Mobile number',
                       keyboardType: const TextInputType.numberWithOptions(
-                        decimal: false,
-                        signed: false,
-                      ),
+                          decimal: false, signed: false),
                       inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
+                        FilteringTextInputFormatter.digitsOnly
                       ],
                       textInputAction: TextInputAction.done,
                     ),
@@ -529,22 +492,23 @@ class _HeaderField extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
+          color: Colors.white, borderRadius: BorderRadius.circular(12)),
       child: TextField(
         controller: controller,
         keyboardType: keyboardType,
         textCapitalization: textCapitalization,
         textInputAction: textInputAction,
         inputFormatters: inputFormatters,
-        style: const TextStyle(fontSize: 14, color: Color(0xFF1A1A2E)),
+        style:
+            const TextStyle(fontSize: 14, color: Color(0xFF1A1A2E)),
         decoration: InputDecoration(
           prefixIcon: Icon(icon, size: 18, color: const Color(0xFF8E8E93)),
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
+          hintStyle:
+              const TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 13),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 13),
         ),
       ),
     );
@@ -572,13 +536,11 @@ class _SearchBar extends StatelessWidget {
         onChanged: onChanged,
         style: const TextStyle(fontSize: 15, color: Color(0xFF1A1A2E)),
         decoration: const InputDecoration(
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            color: Color(0xFF8E8E93),
-            size: 22,
-          ),
+          prefixIcon: Icon(Icons.search_rounded,
+              color: Color(0xFF8E8E93), size: 22),
           hintText: 'Scan or search item...',
-          hintStyle: TextStyle(fontSize: 15, color: Color(0xFF8E8E93)),
+          hintStyle:
+              TextStyle(fontSize: 15, color: Color(0xFF8E8E93)),
           border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(vertical: 14),
         ),
@@ -594,7 +556,8 @@ class _SuggestionsDropdown extends StatelessWidget {
   final List<Map<String, dynamic>> products;
   final ValueChanged<Map<String, dynamic>> onSelect;
 
-  const _SuggestionsDropdown({required this.products, required this.onSelect});
+  const _SuggestionsDropdown(
+      {required this.products, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
@@ -617,7 +580,8 @@ class _SuggestionsDropdown extends StatelessWidget {
             onTap: () => onSelect(p),
             borderRadius: BorderRadius.circular(14),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 13),
               child: Row(
                 children: [
                   Container(
@@ -627,11 +591,8 @@ class _SuggestionsDropdown extends StatelessWidget {
                       color: const Color(0xFFF0F0F5),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
-                      Icons.inventory_2_outlined,
-                      size: 18,
-                      color: Color(0xFF3D1A2E),
-                    ),
+                    child: const Icon(Icons.inventory_2_outlined,
+                        size: 18, color: Color(0xFF3D1A2E)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -679,7 +640,6 @@ class _EmptyState extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                // Package emoji icon approximation
                 Container(
                   width: 72,
                   height: 72,
@@ -687,11 +647,8 @@ class _EmptyState extends StatelessWidget {
                     color: const Color(0xFFF5A623),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Icon(
-                    Icons.inventory_2_rounded,
-                    color: Colors.white,
-                    size: 38,
-                  ),
+                  child: const Icon(Icons.inventory_2_rounded,
+                      color: Colors.white, size: 38),
                 ),
                 Positioned(
                   bottom: -6,
@@ -704,14 +661,11 @@ class _EmptyState extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: const Center(
-                      child: Text(
-                        '0',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      child: Text('0',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
                     ),
                   ),
                 ),
@@ -721,20 +675,16 @@ class _EmptyState extends StatelessWidget {
             const Text(
               'No items added yet',
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1A2E),
-              ),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1A2E)),
             ),
             const SizedBox(height: 8),
             const Text(
               'Search or scan barcode to add products\nto the invoice',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 14,
-                color: Color(0xFF8E8E93),
-                height: 1.5,
-              ),
+                  fontSize: 14, color: Color(0xFF8E8E93), height: 1.5),
             ),
           ],
         ),
@@ -773,82 +723,75 @@ class _CartList extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(0, 14, 0, 14),
               decoration: const BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: Color(0xFFECECEC), width: 1),
-                ),
+                    bottom: BorderSide(
+                        color: Color(0xFFECECEC), width: 1)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            item.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 33 / 2,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF202124),
-                              height: 1.2,
-                            ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 33 / 2,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF202124),
+                            height: 1.2,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () => onRemove(i),
-                          child: const Icon(
-                            Icons.delete_outline,
-                            color: Color(0xFFDA4F45),
-                            size: 20,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      item.code != null && item.code!.isNotEmpty
-                          ? 'Code: ${item.code} | UOM: Pcs'
-                          : 'UOM: Pcs',
-                      style: const TextStyle(
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => onRemove(i),
+                        child: const Icon(Icons.delete_outline,
+                            color: Color(0xFFDA4F45), size: 20),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.code != null && item.code!.isNotEmpty
+                        ? 'Code: ${item.code} | UOM: Pcs'
+                        : 'UOM: Pcs',
+                    style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w400,
-                        color: Color(0xFF6F7277),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF2F3F5),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            'Qty: ${item.quantity.toString().padLeft(2, '0')}',
-                            style: const TextStyle(
+                        color: Color(0xFF6F7277)),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF2F3F5),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'Qty: ${item.quantity.toString().padLeft(2, '0')}',
+                          style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
-                              color: Color(0xFF555B65),
-                            ),
-                          ),
+                              color: Color(0xFF555B65)),
                         ),
-                        const Spacer(),
-                        Text(
-                          'TK ${(item.price * item.quantity).toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1B1D22),
-                          ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'TK ${(item.price * item.quantity).toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1B1D22),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -898,21 +841,18 @@ class _BottomBar extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Total row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Total Payable ($totalItems Items)',
                     style: const TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF8E8E93),
-                    ),
+                        fontSize: 14, color: Color(0xFF8E8E93)),
                   ),
                   Text(
                     '৳ ${formatAmount(totalPayable)}',
                     style: TextStyle(
-                      fontSize: 38 / 2,
+                      fontSize: 19,
                       fontWeight: FontWeight.w800,
                       color: active
                           ? const Color(0xFF1A1A2E)
@@ -923,8 +863,6 @@ class _BottomBar extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-
-              // Checkout button
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -934,10 +872,9 @@ class _BottomBar extends StatelessWidget {
                   label: const Text(
                     'Checkout',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                    ),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: active
@@ -946,8 +883,7 @@ class _BottomBar extends StatelessWidget {
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
               ),
@@ -960,218 +896,119 @@ class _BottomBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Checkout Bottom Sheet
+// Checkout Loading Screen  (unchanged, but builder-pattern)
 // ─────────────────────────────────────────────────────────────
-class _CheckoutSheet extends StatefulWidget {
-  final List<CartItem> items;
-  final double total;
-  final String customerName;
-  final VoidCallback onConfirm;
 
-  const _CheckoutSheet({
-    required this.items,
-    required this.total,
-    required this.customerName,
-    required this.onConfirm,
+class _CheckoutLoadingScreen extends StatefulWidget {
+  final VoidCallback onComplete;
+  final Widget Function(VoidCallback onPrint) destinationBuilder;
+
+  const _CheckoutLoadingScreen({
+    required this.onComplete,
+    required this.destinationBuilder,
   });
 
   @override
-  State<_CheckoutSheet> createState() => _CheckoutSheetState();
+  State<_CheckoutLoadingScreen> createState() =>
+      _CheckoutLoadingScreenState();
 }
 
-class _CheckoutSheetState extends State<_CheckoutSheet> {
-  int _selectedPayment = 0; // 0=Cash, 1=Card, 2=MFS
-
-  final List<Map<String, dynamic>> _methods = [
-    {'label': 'Cash', 'icon': Icons.payments_outlined},
-    {'label': 'Card', 'icon': Icons.credit_card_outlined},
-    {'label': 'MFS', 'icon': Icons.mobile_friendly_outlined},
-  ];
+class _CheckoutLoadingScreenState extends State<_CheckoutLoadingScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => widget.destinationBuilder(() {
+            widget.onComplete();
+            Navigator.of(context).pop();
+          }),
+        ),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      backgroundColor: const Color(0xFFF3F3F5),
+      body: Column(
         children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD1D1D6),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          const Text(
-            'Confirm Payment',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1A1A2E),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            widget.customerName.isEmpty ? 'Cash Customer' : widget.customerName,
-            style: const TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
-          ),
-          const SizedBox(height: 20),
-
-          // Summary
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F7),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              children: [
-                ...widget.items.map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${item.name} ×${item.quantity}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF1A1A2E),
-                          ),
-                        ),
-                        Text(
-                          '৳${(item.price * item.quantity).toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A2E),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const Divider(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Total',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      '৳${widget.total.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1A1A2E),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Payment method
-          const Text(
-            'Payment Method',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A2E),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: _methods.asMap().entries.map((e) {
-              final selected = _selectedPayment == e.key;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _selectedPayment = e.key),
-                  child: Container(
-                    margin: EdgeInsets.only(right: e.key < 2 ? 8 : 0),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? const Color(0xFF1A1A2E)
-                          : const Color(0xFFF0F0F5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(
-                          e.value['icon'],
-                          color: selected
-                              ? Colors.white
-                              : const Color(0xFF8E8E93),
-                          size: 22,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          e.value['label'],
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: selected
-                                ? Colors.white
-                                : const Color(0xFF8E8E93),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-
-          // Confirm button
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: widget.onConfirm,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2ECC71),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: const Text(
-                'Confirm & Print',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-          ),
+          _CheckoutTopStripe(),
+          const Expanded(child: Center(child: _DotLoader())),
         ],
+      ),
+    );
+  }
+}
+
+class _DotLoader extends StatefulWidget {
+  const _DotLoader();
+
+  @override
+  State<_DotLoader> createState() => _DotLoaderState();
+}
+
+class _DotLoaderState extends State<_DotLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final active = (_ctrl.value * 3).floor() % 3;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            return Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(
+                color: i == active
+                    ? const Color(0xFF3B3B3E)
+                    : const Color(0xFFD3D3D6),
+                shape: BoxShape.circle,
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+class _CheckoutTopStripe extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.of(context).padding.top;
+    return Container(
+      width: double.infinity,
+      height: 44 + topInset,
+      padding: EdgeInsets.only(top: topInset),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Color(0xFF0C0A10),
+            Color(0xFF132746),
+            Color(0xFF1C2439),
+          ],
+        ),
       ),
     );
   }
