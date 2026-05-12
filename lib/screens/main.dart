@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../models/product.dart';
 import 'search_customer.dart';
 import 'search_product.dart';
 
@@ -28,9 +30,16 @@ class POSApp extends StatelessWidget {
 class CartItem {
   final String name;
   final double price;
+  /// Inventory / barcode id when added from API search; used to merge lines.
+  final String? code;
   int quantity;
 
-  CartItem({required this.name, required this.price, this.quantity = 1});
+  CartItem({
+    required this.name,
+    required this.price,
+    this.code,
+    this.quantity = 1,
+  });
 }
 
 class POSScreen extends StatefulWidget {
@@ -95,20 +104,49 @@ class _POSScreenState extends State<POSScreen> {
 
   void _addToCart(Map<String, dynamic> product) {
     setState(() {
+      final barcode = product['barcode']?.toString() ?? '';
       final existing = _cartItems.firstWhere(
-        (item) => item.name == product['name'],
+        (item) => barcode.isNotEmpty
+            ? item.code == barcode
+            : item.name == product['name'],
         orElse: () => CartItem(name: '', price: 0),
       );
       if (existing.name.isNotEmpty) {
         existing.quantity++;
       } else {
         _cartItems.add(
-          CartItem(name: product['name'], price: product['price']),
+          CartItem(
+            name: product['name'] as String,
+            price: (product['price'] as num).toDouble(),
+            code: barcode.isEmpty ? null : barcode,
+          ),
         );
       }
       _showSuggestions = false;
       _searchController.clear();
       _filteredProducts = [];
+    });
+  }
+
+  void _addProductFromSearch(Product product) {
+    setState(() {
+      final existing = _cartItems.firstWhere(
+        (item) => product.code.isNotEmpty
+            ? item.code == product.code
+            : item.name == product.name,
+        orElse: () => CartItem(name: '', price: 0),
+      );
+      if (existing.name.isNotEmpty) {
+        existing.quantity++;
+      } else {
+        _cartItems.add(
+          CartItem(
+            name: product.name,
+            price: product.price,
+            code: product.code.isEmpty ? null : product.code,
+          ),
+        );
+      }
     });
   }
 
@@ -170,9 +208,11 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   Future<void> _openProductSearch() async {
-    await Navigator.of(context).push(
+    final product = await Navigator.of(context).push<Product>(
       MaterialPageRoute(builder: (_) => const SearchProductScreen()),
     );
+    if (!mounted || product == null) return;
+    _addProductFromSearch(product);
   }
 
   @override
@@ -198,9 +238,14 @@ class _POSScreenState extends State<POSScreen> {
             onCashCustomerTap: _openCustomerSearch,
           ),
 
-          // ── Body ────────────────────────────────────────────────
+          // ── Body (tap empty area / scroll to dismiss keyboard) ───
           Expanded(
-            child: SingleChildScrollView(
+            child: GestureDetector(
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              behavior: HitTestBehavior.translucent,
+              child: SingleChildScrollView(
+              keyboardDismissBehavior:
+                  ScrollViewKeyboardDismissBehavior.onDrag,
               physics: const BouncingScrollPhysics(),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -250,6 +295,7 @@ class _POSScreenState extends State<POSScreen> {
                   ],
                 ),
               ),
+            ),
             ),
           ),
         ],
@@ -371,7 +417,9 @@ class _Header extends StatelessWidget {
                       controller: nameController,
                       icon: Icons.person_outline_rounded,
                       hint: 'Add name',
-                      keyboardType: TextInputType.name,
+                      keyboardType: TextInputType.text,
+                      textCapitalization: TextCapitalization.words,
+                      textInputAction: TextInputAction.next,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -380,7 +428,14 @@ class _Header extends StatelessWidget {
                       controller: phoneController,
                       icon: Icons.phone_outlined,
                       hint: 'Mobile number',
-                      keyboardType: TextInputType.phone,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: false,
+                        signed: false,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                      textInputAction: TextInputAction.done,
                     ),
                   ),
                 ],
@@ -398,12 +453,18 @@ class _HeaderField extends StatelessWidget {
   final IconData icon;
   final String hint;
   final TextInputType keyboardType;
+  final TextCapitalization textCapitalization;
+  final TextInputAction textInputAction;
+  final List<TextInputFormatter>? inputFormatters;
 
   const _HeaderField({
     required this.controller,
     required this.icon,
     required this.hint,
     required this.keyboardType,
+    this.textCapitalization = TextCapitalization.none,
+    this.textInputAction = TextInputAction.done,
+    this.inputFormatters,
   });
 
   @override
@@ -416,6 +477,9 @@ class _HeaderField extends StatelessWidget {
       child: TextField(
         controller: controller,
         keyboardType: keyboardType,
+        textCapitalization: textCapitalization,
+        textInputAction: textInputAction,
+        inputFormatters: inputFormatters,
         style: const TextStyle(fontSize: 14, color: Color(0xFF1A1A2E)),
         decoration: InputDecoration(
           prefixIcon: Icon(icon, size: 18, color: const Color(0xFF8E8E93)),
@@ -683,7 +747,9 @@ class _CartList extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '৳${item.price.toStringAsFixed(2)} × ${item.quantity}',
+                      item.code != null && item.code!.isNotEmpty
+                          ? 'Code: ${item.code} · ৳${item.price.toStringAsFixed(2)} × ${item.quantity}'
+                          : '৳${item.price.toStringAsFixed(2)} × ${item.quantity}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFF8E8E93),
@@ -775,7 +841,7 @@ class _BottomBar extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Total Payable ($totalItems Items)',
+                    'Total Payment ($totalItems Items)',
                     style: const TextStyle(
                       fontSize: 14,
                       color: Color(0xFF8E8E93),

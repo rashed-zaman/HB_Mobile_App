@@ -1,54 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-// ─── Model ───────────────────────────────────────────────────────────────────
-
-enum StockStatus { inStock, lowStock, outOfStock }
-
-class Product {
-  final String name;
-  final String code;
-  final int stock;
-  final double price;
-
-  const Product({
-    required this.name,
-    required this.code,
-    required this.stock,
-    required this.price,
-  });
-
-  StockStatus get stockStatus {
-    if (stock == 0) return StockStatus.outOfStock;
-    if (stock <= 5) return StockStatus.lowStock;
-    return StockStatus.inStock;
-  }
-
-  String get stockLabel {
-    if (stock == 0) return 'Stock: Out';
-    return 'Stock: $stock Pcs';
-  }
-
-  bool matchesQuery(String query) {
-    if (query.isEmpty) return true;
-    final q = query.toLowerCase();
-    return name.toLowerCase().contains(q) || code.toLowerCase().contains(q);
-  }
-}
-
-// ─── Sample Data ─────────────────────────────────────────────────────────────
-
-const List<Product> _allProducts = [
-  Product(name: 'Classic Blue Lungi', code: 'M-03', stock: 45, price: 2700),
-  Product(name: 'Classic Blue Lungi', code: 'M-03', stock: 0, price: 2700),
-  Product(name: 'Classic Blue Lungi', code: 'F-01', stock: 5, price: 2700),
-  Product(name: 'Classic Blue Lungi', code: 'F-01', stock: 5, price: 2700),
-  Product(name: 'Classic White Lungi', code: 'W-01', stock: 20, price: 3200),
-  Product(name: 'Premium Silk Lungi', code: 'S-05', stock: 8, price: 5500),
-  Product(name: 'Cotton Stripe Lungi', code: 'C-12', stock: 0, price: 1800),
-  Product(name: 'Royal Check Lungi', code: 'R-07', stock: 3, price: 4100),
-];
-
-// ─── Screen ──────────────────────────────────────────────────────────────────
+import '../models/product.dart';
+import '../services/inventory_service.dart';
 
 class SearchProductScreen extends StatefulWidget {
   /// Called when the user taps a product. Receives the selected [Product].
@@ -63,38 +18,117 @@ class SearchProductScreen extends StatefulWidget {
 class _SearchProductScreenState extends State<SearchProductScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+  final InventoryService _inventory = InventoryService();
 
-  List<Product> _results = _allProducts;
+  static const int _pageSize = 10;
+
+  Timer? _debounce;
+  List<Product> _items = [];
+  int _currentPage = -1;
+  bool _hasMore = true;
+  bool _loading = false;
+  bool _loadingMore = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onQueryChanged);
-    // Auto-focus the search field when the screen opens
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _focusNode.requestFocus(),
-    );
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+      _fetch(append: false);
+    });
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.removeListener(_onQueryChanged);
     _controller.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
+    _inventory.close();
     super.dispose();
   }
 
+  void _onScroll() {
+    if (!_hasMore || _loadingMore || _loading) return;
+    final pos = _scrollController.position;
+    if (!pos.hasPixels || !pos.hasViewportDimension) return;
+    if (pos.pixels >= pos.maxScrollExtent - 240) {
+      _fetch(append: true);
+    }
+  }
+
   void _onQueryChanged() {
-    final query = _controller.text.trim();
-    setState(() {
-      _results = _allProducts.where((p) => p.matchesQuery(query)).toList();
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      _fetch(append: false);
     });
+  }
+
+  Future<void> _fetch({required bool append}) async {
+    if (_loadingMore && append) return;
+    if (_loading && !append) return;
+
+    final query = _controller.text.trim();
+    final page = append ? _currentPage + 1 : 0;
+
+    setState(() {
+      _error = null;
+      if (!append) {
+        _loading = true;
+      } else {
+        _loadingMore = true;
+      }
+    });
+
+    try {
+      final result = await _inventory.fetchItems(
+        page: page,
+        size: _pageSize,
+        search: query,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (append) {
+          _items.addAll(result.items);
+        } else {
+          _items = result.items;
+        }
+        _currentPage = page;
+        if (append && result.items.isEmpty) {
+          _hasMore = false;
+        } else {
+          _hasMore = !result.last;
+        }
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        _error = e is InventoryException ? e.message : e.toString();
+        if (!append) {
+          _items = [];
+          _currentPage = -1;
+          _hasMore = false;
+        }
+      });
+    }
   }
 
   void _clearQuery() {
     _controller.clear();
     _focusNode.requestFocus();
   }
+
+  Future<void> _retry() => _fetch(append: false);
 
   @override
   Widget build(BuildContext context) {
@@ -109,14 +143,12 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
             const SizedBox(height: 20),
             _buildSectionLabel(),
             const SizedBox(height: 8),
-            Expanded(child: _buildProductList()),
+            Expanded(child: _buildBody()),
           ],
         ),
       ),
     );
   }
-
-  // ── Header ────────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
     return Padding(
@@ -132,8 +164,6 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
     );
   }
 
-  // ── Search Bar ────────────────────────────────────────────────────────────
-
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -146,7 +176,6 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
         ),
         child: Row(
           children: [
-            // Back / search icon
             GestureDetector(
               onTap: () => Navigator.of(context).maybePop(),
               child: const Padding(
@@ -158,8 +187,6 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
                 ),
               ),
             ),
-
-            // Text field
             Expanded(
               child: TextField(
                 controller: _controller,
@@ -181,43 +208,52 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
                 textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _fetch(append: false),
               ),
             ),
-
-            // Clear button
-            if (_controller.text.isNotEmpty)
-              GestureDetector(
-                onTap: _clearQuery,
-                child: Container(
-                  margin: const EdgeInsets.only(right: 10),
-                  width: 26,
-                  height: 26,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFE8E8E8),
-                    shape: BoxShape.circle,
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _controller,
+              builder: (_, value, _) {
+                if (value.text.isEmpty) return const SizedBox(width: 10);
+                return GestureDetector(
+                  onTap: _clearQuery,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 10),
+                    width: 26,
+                    height: 26,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE8E8E8),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      size: 14,
+                      color: Color(0xFF666666),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.close,
-                    size: 14,
-                    color: Color(0xFF666666),
-                  ),
-                ),
-              ),
+                );
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  // ── Section Label ─────────────────────────────────────────────────────────
-
   Widget _buildSectionLabel() {
+    String label;
+    if (_loading && _items.isEmpty) {
+      label = 'Loading…';
+    } else if (_controller.text.trim().isEmpty) {
+      label = 'Products';
+    } else {
+      label = 'Results (${_items.length})';
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Text(
-        _controller.text.isEmpty
-            ? 'Recent Product'
-            : 'Results (${_results.length})',
+        label,
         style: const TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w500,
@@ -228,10 +264,38 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
     );
   }
 
-  // ── Product List ──────────────────────────────────────────────────────────
+  Widget _buildBody() {
+    if (_loading && _items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-  Widget _buildProductList() {
-    if (_results.isEmpty) {
+    if (_error != null && _items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _retry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -251,19 +315,37 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
       );
     }
 
-    return ListView.separated(
+    return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      itemCount: _results.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 0),
-      itemBuilder: (context, index) => _ProductTile(
-        product: _results[index],
-        onTap: () => widget.onProductSelected?.call(_results[index]),
-      ),
+      itemCount: _items.length + (_loadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= _items.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        return _ProductTile(
+          product: _items[index],
+          onTap: () {
+            final p = _items[index];
+            widget.onProductSelected?.call(p);
+            if (widget.onProductSelected == null) {
+              Navigator.of(context).pop<Product>(p);
+            }
+          },
+        );
+      },
     );
   }
 }
-
-// ─── Product Tile ─────────────────────────────────────────────────────────────
 
 class _ProductTile extends StatelessWidget {
   final Product product;
@@ -293,7 +375,6 @@ class _ProductTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           child: Row(
             children: [
-              // Icon box
               Container(
                 width: 44,
                 height: 44,
@@ -307,10 +388,7 @@ class _ProductTile extends StatelessWidget {
                   color: Color(0xFF999999),
                 ),
               ),
-
               const SizedBox(width: 12),
-
-              // Name + meta
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,8 +427,7 @@ class _ProductTile extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 12.5,
                             color: _stockColor,
-                            fontWeight:
-                                product.stockStatus != StockStatus.inStock
+                            fontWeight: product.stockStatus != StockStatus.inStock
                                 ? FontWeight.w600
                                 : FontWeight.w400,
                           ),
@@ -360,10 +437,7 @@ class _ProductTile extends StatelessWidget {
                   ],
                 ),
               ),
-
               const SizedBox(width: 8),
-
-              // Price
               Text(
                 '৳ ${_formatPrice(product.price)}',
                 style: const TextStyle(

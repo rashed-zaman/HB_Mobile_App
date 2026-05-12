@@ -6,4 +6,19 @@ class ApiConfig {
   static Uri endpoint(String path) => Uri.parse('$baseUrl$path');
 
   static final Uri login = endpoint('/api/mobile/auth/login');
+
+  /// GET `/api/mobile/inventory/items?page=&size=&search=`
+  static Uri inventoryItems({
+    required int page,
+    required int size,
+    String search = '',
+  }) {
+    return Uri.parse('$baseUrl/api/mobile/inventory/items').replace(
+      queryParameters: <String, String>{
+        'page': '$page',
+        'size': '$size',
+        'search': search,
+      },
+    );
+  }
 }

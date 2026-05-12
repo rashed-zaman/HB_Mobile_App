@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../services/auth_session.dart';
 import 'main.dart' show POSScreen;
 
 class LoginScreen extends StatefulWidget {
@@ -73,6 +74,9 @@ class _LoginScreenState extends State<LoginScreen>
         username: username,
         password: password,
       );
+
+      AuthSession.accessToken = user.token;
+      AuthSession.tokenType = user.type;
 
       if (!mounted) return;
 
