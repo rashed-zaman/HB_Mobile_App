@@ -61,6 +61,9 @@ flutter:
   assets:
     - assets/images/cash.png
     - assets/images/mfs.png
+    - assets/images/bkash-mfs.png
+    - assets/images/nogod-mfs.png
+    - assets/images/upay-mfs.png
     - assets/images/credit-cards.png
     - assets/images/bangla-qr.png
 
