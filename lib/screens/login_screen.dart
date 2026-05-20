@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/auth_session.dart';
+import '../services/device_id_store.dart';
 import 'main.dart' show POSScreen;
 
 class LoginScreen extends StatefulWidget {
@@ -70,9 +71,11 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
 
     try {
+      final deviceId = await getOrCreateDeviceId();
       final user = await _authService.login(
         username: username,
         password: password,
+        deviceId: deviceId,
       );
 
       AuthSession.accessToken = user.token;

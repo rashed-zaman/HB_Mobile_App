@@ -57,14 +57,16 @@ class AuthService {
   Future<LoginResponse> login({
     required String username,
     required String password,
+    required String deviceId,
   }) async {
     try {
       final response = await _client
           .post(
             ApiConfig.login,
-            headers: const {
+            headers: {
               'Accept': 'application/json',
               'Content-Type': 'application/json',
+              'X-Device-Id': deviceId,
             },
             body: jsonEncode({'username': username, 'password': password}),
           )
