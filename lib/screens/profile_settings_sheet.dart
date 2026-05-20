@@ -1,0 +1,399 @@
+import 'package:flutter/material.dart';
+
+import '../services/auth_session.dart';
+import 'login_screen.dart';
+
+/// Opens the Profile & Settings panel (modal sheet) from the POS burger menu.
+Future<void> showProfileSettingsSheet(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    builder: (context) => const _ProfileSettingsSheet(),
+  );
+}
+
+class _ProfileSettingsSheet extends StatelessWidget {
+  const _ProfileSettingsSheet();
+
+  static const Color _textDark = Color(0xFF1A1A2E);
+  static const Color _textMuted = Color(0xFF8E8E93);
+  static const Color _cardBorder = Color(0xFFE8E8ED);
+
+  @override
+  Widget build(BuildContext context) {
+    final name = AuthSession.fullname?.trim().isNotEmpty == true
+        ? AuthSession.fullname!.trim()
+        : (AuthSession.username ?? 'User');
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.92,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              _buildSheetHeader(context),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                  children: [
+                    _buildProfileHeader(name),
+                    const SizedBox(height: 20),
+                    _InfoCard(
+                      icon: Icons.business_outlined,
+                      label: 'Organization',
+                      value: AuthSession.organization,
+                    ),
+                    const SizedBox(height: 10),
+                    _InfoCard(
+                      icon: Icons.account_tree_outlined,
+                      label: 'Business Unit',
+                      value: AuthSession.businessUnit,
+                    ),
+                    const SizedBox(height: 10),
+                    _InfoCard(
+                      icon: Icons.store_mall_directory_outlined,
+                      label: 'Outlet',
+                      value: AuthSession.outlet,
+                    ),
+                    const SizedBox(height: 10),
+                    _InfoCard(
+                      icon: Icons.storefront_outlined,
+                      label: 'Store',
+                      value: AuthSession.store,
+                    ),
+                    const SizedBox(height: 24),
+                    const _SectionLabel('Operations'),
+                    _MenuTile(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Invoicing',
+                      onTap: () => _onMenuTap(context, 'Invoicing'),
+                    ),
+                    _MenuTile(
+                      icon: Icons.manage_search_outlined,
+                      label: 'Bill search',
+                      onTap: () => _onMenuTap(context, 'Bill search'),
+                    ),
+                    const SizedBox(height: 16),
+                    const _SectionLabel('Cash control'),
+                    _MenuTile(
+                      icon: Icons.payments_outlined,
+                      label: 'Settlement',
+                      onTap: () => _onMenuTap(context, 'Settlement'),
+                    ),
+                    _MenuTile(
+                      icon: Icons.login_outlined,
+                      label: 'Sign in',
+                      onTap: () => _onMenuTap(context, 'Sign in'),
+                    ),
+                    _MenuTile(
+                      icon: Icons.logout_outlined,
+                      label: 'Sign off',
+                      onTap: () => _onMenuTap(context, 'Sign off'),
+                    ),
+                    const SizedBox(height: 16),
+                    const _SectionLabel('System'),
+                    _MenuTile(
+                      icon: Icons.settings_outlined,
+                      label: 'Setting',
+                      onTap: () => _onMenuTap(context, 'Setting'),
+                    ),
+                    const SizedBox(height: 28),
+                    _LogoutButton(onPressed: () => _logout(context)),
+                    const SizedBox(height: 16),
+                    const Center(
+                      child: Text(
+                        'Version 1.0.0',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _textMuted,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: MediaQuery.paddingOf(context).bottom + 8),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSheetHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+      child: Row(
+        children: [
+          const SizedBox(width: 40),
+          const Expanded(
+            child: Text(
+              'Profile & Settings',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: _textDark,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close, color: _textDark, size: 22),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader(String name) {
+    final initials = _initials(name);
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: const Color(0xFFE8EEF8),
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF3B5998),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 2,
+              bottom: 2,
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF22C55E),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          name,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: _textDark,
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) {
+      return parts.first.length >= 2
+          ? parts.first.substring(0, 2).toUpperCase()
+          : parts.first.toUpperCase();
+    }
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+
+  static void _onMenuTap(BuildContext context, String label) {
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label — coming soon'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  static void _logout(BuildContext context) {
+    Navigator.of(context).pop();
+    AuthSession.clear();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF8E8E93),
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8E8ED)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 22, color: const Color(0xFF8E8E93)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF8E8E93),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A2E),
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuTile extends StatelessWidget {
+  const _MenuTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, size: 22, color: const Color(0xFF8E8E93)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF1A1A2E),
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFFC7C7CC),
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LogoutButton extends StatelessWidget {
+  const _LogoutButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          side: const BorderSide(color: Color(0xFFD1D1D6)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: const Text(
+          'Log out',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFFE53935),
+          ),
+        ),
+      ),
+    );
+  }
+}

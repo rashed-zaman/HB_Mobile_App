@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/product.dart';
 import 'payment_screen.dart';          // ← new
 import 'quantity_bottom_sheet.dart';
+import 'profile_settings_sheet.dart';
 import 'search_customer.dart';
 import 'search_product.dart';
 
@@ -278,6 +279,7 @@ class _POSScreenState extends State<POSScreen> {
             phoneController: _phoneController,
             selectedCustomer: _selectedCustomer,
             onCashCustomerTap: _openCustomerSearch,
+            onMenuTap: () => showProfileSettingsSheet(context),
           ),
           Expanded(
             child: SafeArea(
@@ -355,18 +357,47 @@ class _POSScreenState extends State<POSScreen> {
 // ─────────────────────────────────────────────────────────────
 // Header
 // ─────────────────────────────────────────────────────────────
+class _BurgerMenuButton extends StatelessWidget {
+  const _BurgerMenuButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            Icons.menu_rounded,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   final String invoiceNumber;
   final TextEditingController nameController;
   final TextEditingController phoneController;
   final Customer? selectedCustomer;
   final VoidCallback onCashCustomerTap;
+  final VoidCallback onMenuTap;
 
   const _Header({
     required this.invoiceNumber,
     required this.nameController,
     required this.phoneController,
     required this.onCashCustomerTap,
+    required this.onMenuTap,
     this.selectedCustomer,
   });
 
@@ -394,14 +425,23 @@ class _Header extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           child: Column(
             children: [
-              Text(
-                'Invoice no: $invoiceNumber',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.2,
-                ),
+              Row(
+                children: [
+                  _BurgerMenuButton(onTap: onMenuTap),
+                  Expanded(
+                    child: Text(
+                      'Invoice no: $invoiceNumber',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 44),
+                ],
               ),
               const SizedBox(height: 14),
               Material(

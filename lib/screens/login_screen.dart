@@ -78,8 +78,15 @@ class _LoginScreenState extends State<LoginScreen>
         deviceId: deviceId,
       );
 
-      AuthSession.accessToken = user.token;
-      AuthSession.tokenType = user.type;
+      AuthSession.setUser(
+        token: user.token,
+        type: user.type,
+        fullname: user.fullname,
+        username: user.username,
+        email: user.email,
+        employeeId: user.employeeId,
+        roles: user.roles,
+      );
 
       if (!mounted) return;
 
