@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_session.dart';
 import 'login_screen.dart';
+import 'sign_in_screen.dart';
 
 /// Opens the Profile & Settings panel (modal sheet) from the POS burger menu.
 Future<void> showProfileSettingsSheet(BuildContext context) {
@@ -93,7 +94,7 @@ class _ProfileSettingsSheet extends StatelessWidget {
                     _MenuTile(
                       icon: Icons.login_outlined,
                       label: 'Sign in',
-                      onTap: () => _onMenuTap(context, 'Sign in'),
+                      onTap: () => _openSignIn(context),
                     ),
                     _MenuTile(
                       icon: Icons.logout_outlined,
@@ -215,6 +216,13 @@ class _ProfileSettingsSheet extends StatelessWidget {
           : parts.first.toUpperCase();
     }
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+
+  static void _openSignIn(BuildContext context) {
+    Navigator.of(context).pop();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+    );
   }
 
   static void _onMenuTap(BuildContext context, String label) {
