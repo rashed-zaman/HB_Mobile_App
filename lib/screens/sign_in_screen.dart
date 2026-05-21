@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'sign_in_success_screen.dart';
+
 /// Cash-control session sign-in (opened from Profile & Settings).
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -17,6 +19,8 @@ class _SignInScreenState extends State<SignInScreen> {
   static const Color _printBg = Color(0xFFE8E8ED);
   static const Color _printText = Color(0xFF8E8E93);
 
+  DateTime? _signInTime;
+
   Future<void> _performSignIn() async {
     if (_isSignedIn || _isLoading) return;
     setState(() => _isLoading = true);
@@ -25,21 +29,15 @@ class _SignInScreenState extends State<SignInScreen> {
     setState(() {
       _isLoading = false;
       _isSignedIn = true;
+      _signInTime = DateTime.now();
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Session signed in successfully'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
-  void _printSignIn() {
-    if (!_isSignedIn) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Print sign in — coming soon'),
-        behavior: SnackBarBehavior.floating,
+  void _openSuccessScreen() {
+    if (!_isSignedIn || _signInTime == null) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SignInSuccessScreen.fromSession(signInTime: _signInTime!),
       ),
     );
   }
@@ -103,7 +101,9 @@ class _SignInScreenState extends State<SignInScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: (_isSignedIn || _isLoading) ? null : _performSignIn,
+                  onPressed: _isLoading
+                      ? null
+                      : (_isSignedIn ? _openSuccessScreen : _performSignIn),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _signInGreen,
                     disabledBackgroundColor: _signInGreen.withValues(alpha: 0.5),
@@ -137,7 +137,7 @@ class _SignInScreenState extends State<SignInScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isSignedIn ? _printSignIn : null,
+                  onPressed: _isSignedIn ? _openSuccessScreen : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _printBg,
                     disabledBackgroundColor: _printBg,
@@ -204,15 +204,12 @@ class _BadgePainter extends CustomPainter {
     canvas.drawRRect(r, fill);
     canvas.drawRRect(r, stroke);
 
-    // Clip hole (top-left of badge)
     final clipCenter = Offset(36, 22);
     canvas.drawCircle(clipCenter, 7, stroke);
 
-    // Avatar circle
     canvas.drawCircle(const Offset(36, 48), 16, stroke);
     canvas.drawCircle(const Offset(36, 44), 7, stroke);
 
-    // Text lines on the right
     final linePaint = stroke..strokeWidth = 2;
     const startX = 62.0;
     for (var i = 0; i < 3; i++) {
