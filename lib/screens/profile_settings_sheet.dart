@@ -15,19 +15,24 @@ Future<void> showProfileSettingsSheet(BuildContext context) {
   );
 }
 
-class _ProfileSettingsSheet extends StatelessWidget {
-  const _ProfileSettingsSheet();
-
-  static const Color _textDark = Color(0xFF1A1A2E);
-  static const Color _textMuted = Color(0xFF8E8E93);
-  static const Color _cardBorder = Color(0xFFE8E8ED);
+/// Full-screen variant used when this view is opened as a page route.
+class ProfileSettingsScreen extends StatelessWidget {
+  const ProfileSettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final name = AuthSession.fullname?.trim().isNotEmpty == true
-        ? AuthSession.fullname!.trim()
-        : (AuthSession.username ?? 'User');
+    return const Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(child: _ProfileSettingsContent()),
+    );
+  }
+}
 
+class _ProfileSettingsSheet extends StatelessWidget {
+  const _ProfileSettingsSheet();
+
+  @override
+  Widget build(BuildContext context) {
     return DraggableScrollableSheet(
       initialChildSize: 0.92,
       minChildSize: 0.5,
@@ -39,95 +44,113 @@ class _ProfileSettingsSheet extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          child: Column(
-            children: [
-              _buildSheetHeader(context),
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                  children: [
-                    _buildProfileHeader(name),
-                    const SizedBox(height: 20),
-                    _InfoCard(
-                      icon: Icons.business_outlined,
-                      label: 'Organization',
-                      value: AuthSession.organization,
-                    ),
-                    const SizedBox(height: 10),
-                    _InfoCard(
-                      icon: Icons.account_tree_outlined,
-                      label: 'Business Unit',
-                      value: AuthSession.businessUnit,
-                    ),
-                    const SizedBox(height: 10),
-                    _InfoCard(
-                      icon: Icons.store_mall_directory_outlined,
-                      label: 'Outlet',
-                      value: AuthSession.outlet,
-                    ),
-                    const SizedBox(height: 10),
-                    _InfoCard(
-                      icon: Icons.storefront_outlined,
-                      label: 'Store',
-                      value: AuthSession.store,
-                    ),
-                    const SizedBox(height: 24),
-                    const _SectionLabel('Operations'),
-                    _MenuTile(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Invoicing',
-                      onTap: () => _onMenuTap(context, 'Invoicing'),
-                    ),
-                    _MenuTile(
-                      icon: Icons.manage_search_outlined,
-                      label: 'Bill search',
-                      onTap: () => _onMenuTap(context, 'Bill search'),
-                    ),
-                    const SizedBox(height: 16),
-                    const _SectionLabel('Cash control'),
-                    _MenuTile(
-                      icon: Icons.payments_outlined,
-                      label: 'Settlement',
-                      onTap: () => _onMenuTap(context, 'Settlement'),
-                    ),
-                    _MenuTile(
-                      icon: Icons.login_outlined,
-                      label: 'Sign in',
-                      onTap: () => _openSignIn(context),
-                    ),
-                    _MenuTile(
-                      icon: Icons.logout_outlined,
-                      label: 'Sign off',
-                      onTap: () => _onMenuTap(context, 'Sign off'),
-                    ),
-                    const SizedBox(height: 16),
-                    const _SectionLabel('System'),
-                    _MenuTile(
-                      icon: Icons.settings_outlined,
-                      label: 'Setting',
-                      onTap: () => _onMenuTap(context, 'Setting'),
-                    ),
-                    const SizedBox(height: 28),
-                    _LogoutButton(onPressed: () => _logout(context)),
-                    const SizedBox(height: 16),
-                    const Center(
-                      child: Text(
-                        'Version 1.0.0',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _textMuted,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: MediaQuery.paddingOf(context).bottom + 8),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          child: _ProfileSettingsContent(scrollController: scrollController),
         );
       },
+    );
+  }
+}
+
+class _ProfileSettingsContent extends StatelessWidget {
+  const _ProfileSettingsContent({this.scrollController});
+
+  final ScrollController? scrollController;
+
+  static const Color _textDark = Color(0xFF1A1A2E);
+  static const Color _textMuted = Color(0xFF8E8E93);
+
+  @override
+  Widget build(BuildContext context) {
+    final name = AuthSession.fullname?.trim().isNotEmpty == true
+        ? AuthSession.fullname!.trim()
+        : (AuthSession.username ?? 'User');
+
+    return Column(
+      children: [
+        _buildSheetHeader(context),
+        Expanded(
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            children: [
+              _buildProfileHeader(name),
+              const SizedBox(height: 20),
+              _InfoCard(
+                icon: Icons.business_outlined,
+                label: 'Organization',
+                value: AuthSession.organization,
+              ),
+              const SizedBox(height: 10),
+              _InfoCard(
+                icon: Icons.account_tree_outlined,
+                label: 'Business Unit',
+                value: AuthSession.businessUnit,
+              ),
+              const SizedBox(height: 10),
+              _InfoCard(
+                icon: Icons.store_mall_directory_outlined,
+                label: 'Outlet',
+                value: AuthSession.outlet,
+              ),
+              const SizedBox(height: 10),
+              _InfoCard(
+                icon: Icons.storefront_outlined,
+                label: 'Store',
+                value: AuthSession.store,
+              ),
+              const SizedBox(height: 24),
+              const _SectionLabel('Operations'),
+              _MenuTile(
+                icon: Icons.receipt_long_outlined,
+                label: 'Invoicing',
+                onTap: () => _onMenuTap(context, 'Invoicing'),
+              ),
+              _MenuTile(
+                icon: Icons.manage_search_outlined,
+                label: 'Bill search',
+                onTap: () => _onMenuTap(context, 'Bill search'),
+              ),
+              const SizedBox(height: 16),
+              const _SectionLabel('Cash control'),
+              _MenuTile(
+                icon: Icons.payments_outlined,
+                label: 'Settlement',
+                onTap: () => _onMenuTap(context, 'Settlement'),
+              ),
+              _MenuTile(
+                icon: Icons.login_outlined,
+                label: 'Sign in',
+                onTap: () => _openSignIn(context),
+              ),
+              _MenuTile(
+                icon: Icons.logout_outlined,
+                label: 'Sign off',
+                onTap: () => _onMenuTap(context, 'Sign off'),
+              ),
+              const SizedBox(height: 16),
+              const _SectionLabel('System'),
+              _MenuTile(
+                icon: Icons.settings_outlined,
+                label: 'Setting',
+                onTap: () => _onMenuTap(context, 'Setting'),
+              ),
+              const SizedBox(height: 28),
+              _LogoutButton(onPressed: () => _logout(context)),
+              const SizedBox(height: 16),
+              const Center(
+                child: Text(
+                  'Version 1.0.0',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _textMuted,
+                  ),
+                ),
+              ),
+              SizedBox(height: MediaQuery.paddingOf(context).bottom + 8),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

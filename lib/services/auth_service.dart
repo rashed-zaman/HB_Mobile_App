@@ -15,6 +15,10 @@ class LoginResponse {
     required this.email,
     required this.employeeId,
     required this.roles,
+    this.organizationName = '',
+    this.businessUnitName = '',
+    this.locationName = '',
+    this.storeName = '',
   });
 
   final String token;
@@ -24,8 +28,22 @@ class LoginResponse {
   final String email;
   final int employeeId;
   final List<String> roles;
+  final String organizationName;
+  final String businessUnitName;
+  final String locationName;
+  final String storeName;
 
   factory LoginResponse.fromJson(Map<String, dynamic> json) {
+    final mappings = json['employeeOrgBuLocationStoreMappings'];
+    final Map<String, dynamic>? defaultMapping = mappings is List
+        ? mappings.whereType<Map<String, dynamic>>().firstWhere(
+            (entry) => entry['isDefault'] == true,
+            orElse: () => mappings.whereType<Map<String, dynamic>>().isNotEmpty
+                ? mappings.whereType<Map<String, dynamic>>().first
+                : <String, dynamic>{},
+          )
+        : null;
+
     return LoginResponse(
       token: json['token'] as String? ?? '',
       type: json['type'] as String? ?? '',
@@ -36,6 +54,10 @@ class LoginResponse {
       roles: (json['roles'] as List<dynamic>? ?? const [])
           .map((role) => role.toString())
           .toList(),
+      organizationName: defaultMapping?['organizationName'] as String? ?? '',
+      businessUnitName: defaultMapping?['businessUnitName'] as String? ?? '',
+      locationName: defaultMapping?['locationName'] as String? ?? '',
+      storeName: defaultMapping?['storeName'] as String? ?? '',
     );
   }
 }

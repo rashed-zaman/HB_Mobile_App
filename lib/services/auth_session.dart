@@ -33,6 +33,10 @@ class AuthSession {
     required String email,
     required int employeeId,
     required List<String> roles,
+    String? organization,
+    String? businessUnit,
+    String? outlet,
+    String? store,
   }) {
     accessToken = token;
     tokenType = type;
@@ -41,6 +45,18 @@ class AuthSession {
     AuthSession.email = email;
     AuthSession.employeeId = employeeId;
     AuthSession.roles = List<String>.from(roles);
+    if (organization != null && organization.trim().isNotEmpty) {
+      AuthSession.organization = organization.trim();
+    }
+    if (businessUnit != null && businessUnit.trim().isNotEmpty) {
+      AuthSession.businessUnit = businessUnit.trim();
+    }
+    if (outlet != null && outlet.trim().isNotEmpty) {
+      AuthSession.outlet = outlet.trim();
+    }
+    if (store != null && store.trim().isNotEmpty) {
+      AuthSession.store = store.trim();
+    }
   }
 
   static void clear() {
@@ -51,5 +67,9 @@ class AuthSession {
     email = null;
     employeeId = null;
     roles = [];
+    organization = 'Helal & Brothers';
+    businessUnit = 'Hellal & Brothers (Baburhat) [HBB]';
+    outlet = 'LOC-001 - Amanat Shah Tower';
+    store = 'ST-001 — AST-FG';
   }
 }

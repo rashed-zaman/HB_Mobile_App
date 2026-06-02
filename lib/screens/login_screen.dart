@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/auth_session.dart';
 import '../services/device_id_store.dart';
-import 'main.dart' show POSScreen;
+import 'profile_settings_sheet.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -86,6 +86,10 @@ class _LoginScreenState extends State<LoginScreen>
         email: user.email,
         employeeId: user.employeeId,
         roles: user.roles,
+        organization: user.organizationName,
+        businessUnit: user.businessUnitName,
+        outlet: user.locationName,
+        store: user.storeName,
       );
 
       if (!mounted) return;
@@ -100,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen>
 
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(
-          builder: (context) => const POSScreen(),
+          builder: (context) => const ProfileSettingsScreen(),
         ),
         (route) => false,
       );
