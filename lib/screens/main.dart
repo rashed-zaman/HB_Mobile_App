@@ -8,28 +8,6 @@ import 'profile_settings_sheet.dart';
 import 'search_customer.dart';
 import 'search_product.dart';
 
-void main() {
-  runApp(const POSApp());
-}
-
-class POSApp extends StatelessWidget {
-  const POSApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'B2C POS',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A1A2E)),
-        useMaterial3: true,
-        fontFamily: 'SF Pro Display',
-      ),
-      home: const POSScreen(),
-    );
-  }
-}
-
 class CartItem {
   final String name;
   final double price;

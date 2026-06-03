@@ -1,4 +1,6 @@
-/// Holds auth credentials and user context for authenticated API calls after login.
+import '../models/mobile_session.dart';
+
+/// In-memory session for login credentials, org context, and POS shift state.
 class AuthSession {
   AuthSession._();
 
@@ -10,12 +12,23 @@ class AuthSession {
   static int? employeeId;
   static List<String> roles = [];
 
-  /// Display values for profile menu (can be replaced when API provides them).
-  static String organization = 'Helal & Brothers';
-  static String businessUnit = 'Hellal & Brothers (Baburhat) [HBB]';
-  static String outlet = 'LOC-001 - Amanat Shah Tower';
-  static String store = 'ST-001 — AST-FG';
-  static bool shiftStatus = false;
+  static String? deviceUuid;
+  static bool deviceActive = false;
+  static String? deviceMessage;
+  static PosAccessInfo? posAccess;
+  static List<EmployeeOrgMapping> orgMappings = [];
+  static Map<String, dynamic>? loginShiftSnapshot;
+  static Map<String, dynamic>? rawLoginPayload;
+
+  /// Display values for profile menu.
+  static String organization = '—';
+  static String businessUnit = '—';
+  static String outlet = '—';
+  static String store = '—';
+
+  /// True after successful `POST /api/mobile/pos/signin`.
+  static bool posSignedIn = false;
+  static Map<String, dynamic>? posSignInPayload;
 
   /// Value for the `Authorization` header, e.g. `Bearer eyJ...`, or null if not logged in.
   static String? get authorizationHeader {
@@ -24,6 +37,68 @@ class AuthSession {
     final type =
         (tokenType != null && tokenType!.trim().isNotEmpty) ? tokenType!.trim() : 'Bearer';
     return '$type $token';
+  }
+
+  /// Terminal code sent on POS sign-in (first MOBILE terminal from login `posAccess`).
+  static String? get terminalCode => posAccess?.defaultTerminal?.terminalCode;
+
+  static EmployeeOrgMapping? get defaultOrgMapping {
+    if (orgMappings.isEmpty) return null;
+    return orgMappings.firstWhere(
+      (m) => m.isDefault,
+      orElse: () => orgMappings.first,
+    );
+  }
+
+  static void applyLoginPayload(Map<String, dynamic> json) {
+    rawLoginPayload = Map<String, dynamic>.from(json);
+
+    accessToken = json['token'] as String?;
+    tokenType = json['type'] as String? ?? 'Bearer';
+    fullname = json['fullname'] as String?;
+    username = json['username'] as String?;
+    email = json['email'] as String?;
+    employeeId = json['employeeId'] as int?;
+    roles = (json['roles'] as List<dynamic>? ?? const [])
+        .map((role) => role.toString())
+        .toList();
+
+    deviceUuid = json['deviceUuid'] as String?;
+    deviceActive = json['deviceActive'] as bool? ?? false;
+    deviceMessage = json['deviceMessage'] as String?;
+
+    final pos = json['posAccess'];
+    posAccess = pos is Map<String, dynamic> ? PosAccessInfo.fromJson(pos) : null;
+
+    final mappings = json['employeeOrgBuLocationStoreMappings'];
+    orgMappings = mappings is List
+        ? mappings
+            .whereType<Map<String, dynamic>>()
+            .map(EmployeeOrgMapping.fromJson)
+            .toList()
+        : [];
+
+    final shift = json['shift'];
+    loginShiftSnapshot = shift is Map<String, dynamic> ? Map<String, dynamic>.from(shift) : null;
+
+    final mapping = defaultOrgMapping;
+    if (mapping != null) {
+      organization = mapping.organizationName;
+      businessUnit = mapping.businessUnitName;
+      final locCode = mapping.locationCode.trim();
+      final locName = mapping.locationName.trim();
+      outlet = locCode.isNotEmpty && locName.isNotEmpty
+          ? '$locCode - $locName'
+          : (locName.isNotEmpty ? locName : locCode);
+      final storeCode = mapping.storeCode.trim();
+      final storeName = mapping.storeName.trim();
+      store = storeCode.isNotEmpty && storeName.isNotEmpty
+          ? '$storeCode — $storeName'
+          : (storeName.isNotEmpty ? storeName : storeCode);
+    }
+
+    posSignedIn = false;
+    posSignInPayload = null;
   }
 
   static void setUser({
@@ -60,6 +135,25 @@ class AuthSession {
     }
   }
 
+  static void applyPosSignInPayload(Map<String, dynamic> json) {
+    posSignInPayload = Map<String, dynamic>.from(json);
+    posSignedIn = json['status'] == true;
+    final shift = json['shift'];
+    if (shift is Map<String, dynamic>) {
+      loginShiftSnapshot = Map<String, dynamic>.from(shift);
+    }
+    final data = json['data'];
+    if (data is Map<String, dynamic>) {
+      loginShiftSnapshot ??= <String, dynamic>{};
+      loginShiftSnapshot!['signInData'] = data;
+    }
+  }
+
+  static void clearPosSignIn() {
+    posSignedIn = false;
+    posSignInPayload = null;
+  }
+
   static void clear() {
     accessToken = null;
     tokenType = null;
@@ -68,14 +162,24 @@ class AuthSession {
     email = null;
     employeeId = null;
     roles = [];
-    organization = 'Helal & Brothers';
-    businessUnit = 'Hellal & Brothers (Baburhat) [HBB]';
-    outlet = 'LOC-001 - Amanat Shah Tower';
-    store = 'ST-001 — AST-FG';
-    shiftStatus = false;
+    deviceUuid = null;
+    deviceActive = false;
+    deviceMessage = null;
+    posAccess = null;
+    orgMappings = [];
+    loginShiftSnapshot = null;
+    rawLoginPayload = null;
+    posSignInPayload = null;
+    posSignedIn = false;
+    organization = '—';
+    businessUnit = '—';
+    outlet = '—';
+    store = '—';
   }
 
+  static bool get shiftStatus => posSignedIn;
+
   static void setShiftStatus(bool status) {
-    shiftStatus = status;
+    posSignedIn = status;
   }
 }

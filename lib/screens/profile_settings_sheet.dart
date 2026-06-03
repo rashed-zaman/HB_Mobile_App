@@ -4,6 +4,7 @@ import '../services/auth_session.dart';
 import '../services/device_id_store.dart';
 import '../services/pos_shift_service.dart';
 import 'login_screen.dart';
+import 'main.dart' show POSScreen;
 
 /// Opens the Profile & Settings panel (modal sheet) from the POS burger menu.
 Future<void> showProfileSettingsSheet(BuildContext context) {
@@ -62,7 +63,7 @@ class _ProfileSettingsContent extends StatefulWidget {
 }
 
 class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
-  bool _isShiftActive = AuthSession.shiftStatus;
+  bool _isPosSignedIn = AuthSession.posSignedIn;
   bool _isSigningIn = false;
   final PosShiftService _posShiftService = PosShiftService();
 
@@ -77,7 +78,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
 
     return Column(
       children: [
-        _buildSheetHeader(context, canClose: _isShiftActive),
+        _buildSheetHeader(context, canClose: _isPosSignedIn),
         Expanded(
           child: ListView(
             controller: widget.scrollController,
@@ -113,33 +114,33 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               _MenuTile(
                 icon: Icons.receipt_long_outlined,
                 label: 'Invoicing',
-                enabled: _isShiftActive,
-                onTap: () => _onInvoiceAndBillSearchTap(context),
+                enabled: _isPosSignedIn,
+                onTap: () => _openPosScreen(context),
               ),
               _MenuTile(
                 icon: Icons.manage_search_outlined,
                 label: 'Bill search',
-                enabled: _isShiftActive,
-                onTap: () => _onInvoiceAndBillSearchTap(context),
+                enabled: _isPosSignedIn,
+                onTap: () => _onMenuTap(context, 'Bill search'),
               ),
               const SizedBox(height: 16),
               const _SectionLabel('Cash control'),
               _MenuTile(
                 icon: Icons.payments_outlined,
                 label: 'Settlement',
-                enabled: _isShiftActive,
+                enabled: _isPosSignedIn,
                 onTap: () => _onMenuTap(context, 'Settlement'),
               ),
               _MenuTile(
                 icon: Icons.login_outlined,
                 label: 'Sign in',
-                enabled: !_isSigningIn,
-                onTap: () => _openSignIn(context),
+                enabled: !_isPosSignedIn && !_isSigningIn,
+                onTap: () => _performPosSignIn(context),
               ),
               _MenuTile(
                 icon: Icons.logout_outlined,
                 label: 'Sign off',
-                enabled: _isShiftActive,
+                enabled: _isPosSignedIn,
                 onTap: () => _onSignOff(context),
               ),
               const SizedBox(height: 16),
@@ -260,55 +261,88 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
-  Future<void> _openSignIn(BuildContext context) async {
-    if (_isSigningIn) return;
+  Future<void> _performPosSignIn(BuildContext context) async {
+    if (_isSigningIn || _isPosSignedIn) return;
 
     final employeeId = AuthSession.employeeId;
     if (employeeId == null || employeeId <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid employee id. Please login again.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSnack(context, 'Invalid employee id. Please login again.');
+      return;
+    }
+
+    final terminalCode = AuthSession.terminalCode;
+    if (terminalCode == null || terminalCode.trim().isEmpty) {
+      _showSnack(context, 'No POS terminal assigned. Contact admin.');
       return;
     }
 
     setState(() => _isSigningIn = true);
     try {
-      final deviceUuid = await getOrCreateDeviceId();
+      final deviceUuid = AuthSession.deviceUuid?.trim().isNotEmpty == true
+          ? AuthSession.deviceUuid!.trim()
+          : await getOrCreateDeviceId();
+
       final result = await _posShiftService.signIn(
         employeeId: employeeId,
+        terminalCode: terminalCode.trim(),
         deviceUuid: deviceUuid,
       );
 
-      AuthSession.setShiftStatus(result.status);
-      if (!mounted) return;
-      setState(() => _isShiftActive = result.status);
+      if (!result.status) {
+        if (!mounted) return;
+        _showSnack(
+          context,
+          result.message?.trim().isNotEmpty == true
+              ? result.message!.trim()
+              : 'Sign in failed. Please try again.',
+        );
+        return;
+      }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.status
-                ? 'Sign in successful.'
-                : 'Shift not active for this session.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (result.raw != null) {
+        AuthSession.applyPosSignInPayload(result.raw!);
+      } else {
+        AuthSession.setShiftStatus(true);
+      }
+
+      if (!mounted) return;
+      setState(() => _isPosSignedIn = true);
+      _showSnack(context, 'Sign in successful.');
+
+      _navigateToPosScreen(context);
     } on PosShiftException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSnack(context, error.message);
     } finally {
       if (mounted) {
         setState(() => _isSigningIn = false);
       }
     }
+  }
+
+  static void _showSnack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _openPosScreen(BuildContext context) {
+    if (!_isPosSignedIn) return;
+    _navigateToPosScreen(context);
+  }
+
+  void _navigateToPosScreen(BuildContext context) {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const POSScreen()),
+      (route) => false,
+    );
   }
 
   static void _onMenuTap(BuildContext context, String label) {
@@ -320,14 +354,10 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     );
   }
 
-  static void _onInvoiceAndBillSearchTap(BuildContext context) {
-    _onMenuTap(context, 'Invoicing');
-  }
-
   void _onSignOff(BuildContext context) {
-    AuthSession.setShiftStatus(false);
-    setState(() => _isShiftActive = false);
-    _onMenuTap(context, 'Sign off');
+    AuthSession.clearPosSignIn();
+    setState(() => _isPosSignedIn = false);
+    _showSnack(context, 'Signed off.');
   }
 
   static void _logout(BuildContext context) {

@@ -76,7 +76,7 @@ class AuthService {
 
   final http.Client _client;
 
-  Future<LoginResponse> login({
+  Future<({LoginResponse user, Map<String, dynamic> raw})> login({
     required String username,
     required String password,
     required String deviceId,
@@ -101,7 +101,10 @@ class AuthService {
         );
       }
 
-      return LoginResponse.fromJson(responseBody);
+      return (
+        user: LoginResponse.fromJson(responseBody),
+        raw: responseBody,
+      );
     } on TimeoutException {
       throw const AuthException('Request timed out. Please try again.');
     } on http.ClientException catch (error) {

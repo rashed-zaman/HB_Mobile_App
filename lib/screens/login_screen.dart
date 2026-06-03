@@ -72,31 +72,23 @@ class _LoginScreenState extends State<LoginScreen>
 
     try {
       final deviceId = await getOrCreateDeviceId();
-      final user = await _authService.login(
+      final loginResult = await _authService.login(
         username: username,
         password: password,
         deviceId: deviceId,
       );
+      final user = loginResult.user;
 
-      AuthSession.setUser(
-        token: user.token,
-        type: user.type,
-        fullname: user.fullname,
-        username: user.username,
-        email: user.email,
-        employeeId: user.employeeId,
-        roles: user.roles,
-        organization: user.organizationName,
-        businessUnit: user.businessUnitName,
-        outlet: user.locationName,
-        store: user.storeName,
-      );
+      AuthSession.applyLoginPayload(loginResult.raw);
+      if (AuthSession.deviceUuid == null || AuthSession.deviceUuid!.isEmpty) {
+        AuthSession.deviceUuid = deviceId;
+      }
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Login successful. Welcome ${user.fullname}'),
+          content: Text('Login successful. Welcome ${user.fullname.trim()}'),
           backgroundColor: kAccent,
           behavior: SnackBarBehavior.floating,
         ),

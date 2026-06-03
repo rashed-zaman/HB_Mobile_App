@@ -17,9 +17,15 @@ class PosShiftException implements Exception {
 }
 
 class PosShiftSignInResult {
-  const PosShiftSignInResult({required this.status});
+  const PosShiftSignInResult({
+    required this.status,
+    this.message,
+    this.raw,
+  });
 
   final bool status;
+  final String? message;
+  final Map<String, dynamic>? raw;
 }
 
 class PosShiftService {
@@ -29,11 +35,13 @@ class PosShiftService {
 
   Future<PosShiftSignInResult> signIn({
     required int employeeId,
+    required String terminalCode,
     required String deviceUuid,
   }) async {
     final headers = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      'X-Device-Id': deviceUuid,
     };
     final auth = AuthSession.authorizationHeader;
     if (auth != null) {
@@ -47,6 +55,7 @@ class PosShiftService {
             headers: headers,
             body: jsonEncode({
               'employeeId': employeeId,
+              'terminalCode': terminalCode,
               'deviceUuid': deviceUuid,
             }),
           )
@@ -59,14 +68,13 @@ class PosShiftService {
         );
       }
 
-      final shift = decoded['shift'];
-      bool status = false;
-      if (shift is Map<String, dynamic>) {
-        status = shift['status'] == true;
-      } else if (decoded['status'] is bool) {
-        status = decoded['status'] as bool;
-      }
-      return PosShiftSignInResult(status: status);
+      final status = decoded['status'] == true;
+      final message = decoded['message']?.toString();
+      return PosShiftSignInResult(
+        status: status,
+        message: message,
+        raw: decoded,
+      );
     } on TimeoutException {
       throw const PosShiftException('Request timed out. Please try again.');
     } on http.ClientException catch (error) {
