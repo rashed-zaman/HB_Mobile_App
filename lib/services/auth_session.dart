@@ -15,6 +15,7 @@ class AuthSession {
   static String businessUnit = 'Hellal & Brothers (Baburhat) [HBB]';
   static String outlet = 'LOC-001 - Amanat Shah Tower';
   static String store = 'ST-001 — AST-FG';
+  static bool shiftStatus = false;
 
   /// Value for the `Authorization` header, e.g. `Bearer eyJ...`, or null if not logged in.
   static String? get authorizationHeader {
@@ -71,5 +72,10 @@ class AuthSession {
     businessUnit = 'Hellal & Brothers (Baburhat) [HBB]';
     outlet = 'LOC-001 - Amanat Shah Tower';
     store = 'ST-001 — AST-FG';
+    shiftStatus = false;
+  }
+
+  static void setShiftStatus(bool status) {
+    shiftStatus = status;
   }
 }

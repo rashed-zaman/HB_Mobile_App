@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_session.dart';
 import 'sign_in_success_screen.dart';
 
 /// Cash-control session sign-in (opened from Profile & Settings).
@@ -31,6 +32,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _isSignedIn = true;
       _signInTime = DateTime.now();
     });
+    AuthSession.setShiftStatus(true);
   }
 
   void _openSuccessScreen() {

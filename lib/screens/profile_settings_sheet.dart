@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_session.dart';
+import '../services/device_id_store.dart';
+import '../services/pos_shift_service.dart';
 import 'login_screen.dart';
-import 'sign_in_screen.dart';
 
 /// Opens the Profile & Settings panel (modal sheet) from the POS burger menu.
 Future<void> showProfileSettingsSheet(BuildContext context) {
@@ -51,10 +52,19 @@ class _ProfileSettingsSheet extends StatelessWidget {
   }
 }
 
-class _ProfileSettingsContent extends StatelessWidget {
+class _ProfileSettingsContent extends StatefulWidget {
   const _ProfileSettingsContent({this.scrollController});
 
   final ScrollController? scrollController;
+
+  @override
+  State<_ProfileSettingsContent> createState() => _ProfileSettingsContentState();
+}
+
+class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
+  bool _isShiftActive = AuthSession.shiftStatus;
+  bool _isSigningIn = false;
+  final PosShiftService _posShiftService = PosShiftService();
 
   static const Color _textDark = Color(0xFF1A1A2E);
   static const Color _textMuted = Color(0xFF8E8E93);
@@ -67,10 +77,10 @@ class _ProfileSettingsContent extends StatelessWidget {
 
     return Column(
       children: [
-        _buildSheetHeader(context),
+        _buildSheetHeader(context, canClose: _isShiftActive),
         Expanded(
           child: ListView(
-            controller: scrollController,
+            controller: widget.scrollController,
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             children: [
               _buildProfileHeader(name),
@@ -103,29 +113,34 @@ class _ProfileSettingsContent extends StatelessWidget {
               _MenuTile(
                 icon: Icons.receipt_long_outlined,
                 label: 'Invoicing',
-                onTap: () => _onMenuTap(context, 'Invoicing'),
+                enabled: _isShiftActive,
+                onTap: () => _onInvoiceAndBillSearchTap(context),
               ),
               _MenuTile(
                 icon: Icons.manage_search_outlined,
                 label: 'Bill search',
-                onTap: () => _onMenuTap(context, 'Bill search'),
+                enabled: _isShiftActive,
+                onTap: () => _onInvoiceAndBillSearchTap(context),
               ),
               const SizedBox(height: 16),
               const _SectionLabel('Cash control'),
               _MenuTile(
                 icon: Icons.payments_outlined,
                 label: 'Settlement',
+                enabled: _isShiftActive,
                 onTap: () => _onMenuTap(context, 'Settlement'),
               ),
               _MenuTile(
                 icon: Icons.login_outlined,
                 label: 'Sign in',
+                enabled: !_isSigningIn,
                 onTap: () => _openSignIn(context),
               ),
               _MenuTile(
                 icon: Icons.logout_outlined,
                 label: 'Sign off',
-                onTap: () => _onMenuTap(context, 'Sign off'),
+                enabled: _isShiftActive,
+                onTap: () => _onSignOff(context),
               ),
               const SizedBox(height: 16),
               const _SectionLabel('System'),
@@ -154,7 +169,7 @@ class _ProfileSettingsContent extends StatelessWidget {
     );
   }
 
-  Widget _buildSheetHeader(BuildContext context) {
+  Widget _buildSheetHeader(BuildContext context, {required bool canClose}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
       child: Row(
@@ -173,8 +188,12 @@ class _ProfileSettingsContent extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close, color: _textDark, size: 22),
+            onPressed: canClose ? () => _maybePop(context) : null,
+            icon: Icon(
+              Icons.close,
+              color: canClose ? _textDark : const Color(0xFFC7C7CC),
+              size: 22,
+            ),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           ),
@@ -241,15 +260,58 @@ class _ProfileSettingsContent extends StatelessWidget {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
-  static void _openSignIn(BuildContext context) {
-    Navigator.of(context).pop();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
-    );
+  Future<void> _openSignIn(BuildContext context) async {
+    if (_isSigningIn) return;
+
+    final employeeId = AuthSession.employeeId;
+    if (employeeId == null || employeeId <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid employee id. Please login again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSigningIn = true);
+    try {
+      final deviceUuid = await getOrCreateDeviceId();
+      final result = await _posShiftService.signIn(
+        employeeId: employeeId,
+        deviceUuid: deviceUuid,
+      );
+
+      AuthSession.setShiftStatus(result.status);
+      if (!mounted) return;
+      setState(() => _isShiftActive = result.status);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.status
+                ? 'Sign in successful.'
+                : 'Shift not active for this session.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on PosShiftException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSigningIn = false);
+      }
+    }
   }
 
   static void _onMenuTap(BuildContext context, String label) {
-    Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$label — coming soon'),
@@ -258,13 +320,35 @@ class _ProfileSettingsContent extends StatelessWidget {
     );
   }
 
+  static void _onInvoiceAndBillSearchTap(BuildContext context) {
+    _onMenuTap(context, 'Invoicing');
+  }
+
+  void _onSignOff(BuildContext context) {
+    AuthSession.setShiftStatus(false);
+    setState(() => _isShiftActive = false);
+    _onMenuTap(context, 'Sign off');
+  }
+
   static void _logout(BuildContext context) {
-    Navigator.of(context).pop();
+    _maybePop(context);
     AuthSession.clear();
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
       (_) => false,
     );
+  }
+
+  static void _maybePop(BuildContext context) {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _posShiftService.close();
+    super.dispose();
   }
 }
 
@@ -356,38 +440,41 @@ class _MenuTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.enabled = true,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final tileColor = enabled ? const Color(0xFF1A1A2E) : const Color(0xFFC7C7CC);
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
             children: [
-              Icon(icon, size: 22, color: const Color(0xFF8E8E93)),
+              Icon(icon, size: 22, color: enabled ? const Color(0xFF8E8E93) : tileColor),
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF1A1A2E),
+                    color: tileColor,
                   ),
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.chevron_right_rounded,
-                color: Color(0xFFC7C7CC),
+                color: enabled ? const Color(0xFFC7C7CC) : tileColor,
                 size: 22,
               ),
             ],
