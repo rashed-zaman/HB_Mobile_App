@@ -63,9 +63,10 @@ class _ProfileSettingsContent extends StatefulWidget {
 }
 
 class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
-  bool _isPosSignedIn = AuthSession.posSignedIn;
   bool _isSigningIn = false;
   final PosShiftService _posShiftService = PosShiftService();
+
+  bool get _operationsEnabled => AuthSession.deviceShiftOperationsEnabled;
 
   static const Color _textDark = Color(0xFF1A1A2E);
   static const Color _textMuted = Color(0xFF8E8E93);
@@ -78,7 +79,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
 
     return Column(
       children: [
-        _buildSheetHeader(context, canClose: _isPosSignedIn),
+        _buildSheetHeader(context, canClose: _operationsEnabled),
         Expanded(
           child: ListView(
             controller: widget.scrollController,
@@ -114,13 +115,13 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               _MenuTile(
                 icon: Icons.receipt_long_outlined,
                 label: 'Invoicing',
-                enabled: _isPosSignedIn,
+                enabled: _operationsEnabled,
                 onTap: () => _openPosScreen(context),
               ),
               _MenuTile(
                 icon: Icons.manage_search_outlined,
                 label: 'Bill search',
-                enabled: _isPosSignedIn,
+                enabled: _operationsEnabled,
                 onTap: () => _onMenuTap(context, 'Bill search'),
               ),
               const SizedBox(height: 16),
@@ -128,19 +129,19 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               _MenuTile(
                 icon: Icons.payments_outlined,
                 label: 'Settlement',
-                enabled: _isPosSignedIn,
+                enabled: _operationsEnabled,
                 onTap: () => _onMenuTap(context, 'Settlement'),
               ),
               _MenuTile(
                 icon: Icons.login_outlined,
                 label: 'Sign in',
-                enabled: !_isPosSignedIn && !_isSigningIn,
+                enabled: !_operationsEnabled && !_isSigningIn,
                 onTap: () => _performPosSignIn(context),
               ),
               _MenuTile(
                 icon: Icons.logout_outlined,
                 label: 'Sign off',
-                enabled: _isPosSignedIn,
+                enabled: _operationsEnabled,
                 onTap: () => _onSignOff(context),
               ),
               const SizedBox(height: 16),
@@ -262,7 +263,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
   }
 
   Future<void> _performPosSignIn(BuildContext context) async {
-    if (_isSigningIn || _isPosSignedIn) return;
+    if (_isSigningIn || _operationsEnabled) return;
 
     final employeeId = AuthSession.employeeId;
     if (employeeId == null || employeeId <= 0) {
@@ -306,7 +307,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
       }
 
       if (!mounted) return;
-      setState(() => _isPosSignedIn = true);
+      setState(() {});
       _showSnack(context, 'Sign in successful.');
 
       _navigateToPosScreen(context);
@@ -330,7 +331,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
   }
 
   void _openPosScreen(BuildContext context) {
-    if (!_isPosSignedIn) return;
+    if (!_operationsEnabled) return;
     _navigateToPosScreen(context);
   }
 
@@ -356,7 +357,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
 
   void _onSignOff(BuildContext context) {
     AuthSession.clearPosSignIn();
-    setState(() => _isPosSignedIn = false);
+    setState(() {});
     _showSnack(context, 'Signed off.');
   }
 

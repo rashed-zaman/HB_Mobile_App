@@ -16,6 +16,7 @@ class AuthSession {
   static bool deviceActive = false;
   static String? deviceMessage;
   static PosAccessInfo? posAccess;
+  static DeviceShiftInfo? deviceShift;
   static List<EmployeeOrgMapping> orgMappings = [];
   static Map<String, dynamic>? loginShiftSnapshot;
   static Map<String, dynamic>? rawLoginPayload;
@@ -42,6 +43,15 @@ class AuthSession {
   /// Terminal code sent on POS sign-in (first MOBILE terminal from login `posAccess`).
   static String? get terminalCode => posAccess?.defaultTerminal?.terminalCode;
 
+  /// True when this device has an active shift owned by the logged-in employee.
+  static bool get deviceShiftOperationsEnabled {
+    final shift = deviceShift;
+    if (shift == null || !shift.active) return false;
+    final currentEmployeeId = employeeId;
+    if (currentEmployeeId == null) return false;
+    return shift.employeeId == currentEmployeeId;
+  }
+
   static EmployeeOrgMapping? get defaultOrgMapping {
     if (orgMappings.isEmpty) return null;
     return orgMappings.firstWhere(
@@ -64,7 +74,8 @@ class AuthSession {
         .toList();
 
     deviceUuid = json['deviceUuid'] as String?;
-    deviceActive = json['deviceActive'] as bool? ?? false;
+    deviceActive =
+        json['deviceBound'] as bool? ?? json['deviceActive'] as bool? ?? false;
     deviceMessage = json['deviceMessage'] as String?;
 
     final pos = json['posAccess'];
@@ -80,6 +91,11 @@ class AuthSession {
 
     final shift = json['shift'];
     loginShiftSnapshot = shift is Map<String, dynamic> ? Map<String, dynamic>.from(shift) : null;
+
+    final deviceShiftJson = json['deviceShift'];
+    deviceShift = deviceShiftJson is Map<String, dynamic>
+        ? DeviceShiftInfo.fromJson(deviceShiftJson)
+        : null;
 
     final mapping = defaultOrgMapping;
     if (mapping != null) {
@@ -97,7 +113,7 @@ class AuthSession {
           : (storeName.isNotEmpty ? storeName : storeCode);
     }
 
-    posSignedIn = false;
+    posSignedIn = deviceShiftOperationsEnabled;
     posSignInPayload = null;
   }
 
@@ -137,7 +153,22 @@ class AuthSession {
 
   static void applyPosSignInPayload(Map<String, dynamic> json) {
     posSignInPayload = Map<String, dynamic>.from(json);
-    posSignedIn = json['status'] == true;
+
+    final deviceShiftJson = json['deviceShift'];
+    if (deviceShiftJson is Map<String, dynamic>) {
+      deviceShift = DeviceShiftInfo.fromJson(deviceShiftJson);
+    } else if (json['status'] == true) {
+      deviceShift = (deviceShift ?? const DeviceShiftInfo(active: false)).copyWith(
+        active: true,
+        employeeId: employeeId,
+        employeeName: fullname,
+        username: username,
+        terminalCode: terminalCode,
+        shiftOpen: true,
+      );
+    }
+
+    posSignedIn = deviceShiftOperationsEnabled;
     final shift = json['shift'];
     if (shift is Map<String, dynamic>) {
       loginShiftSnapshot = Map<String, dynamic>.from(shift);
@@ -152,6 +183,12 @@ class AuthSession {
   static void clearPosSignIn() {
     posSignedIn = false;
     posSignInPayload = null;
+    if (deviceShift != null) {
+      deviceShift = deviceShift!.copyWith(
+        active: false,
+        shiftOpen: false,
+      );
+    }
   }
 
   static void clear() {
@@ -166,6 +203,7 @@ class AuthSession {
     deviceActive = false;
     deviceMessage = null;
     posAccess = null;
+    deviceShift = null;
     orgMappings = [];
     loginShiftSnapshot = null;
     rawLoginPayload = null;

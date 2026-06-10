@@ -1,9 +1,22 @@
 class ApiConfig {
   ApiConfig._();
 
-  static const String baseUrl = 'http://68.183.181.148';
+  /// API server on the LAN (e.g. machine at 192.168.7.72).
+  static const String lanBaseUrl = 'http://192.168.7.72:8081';
 
-  static Uri endpoint(String path) => Uri.parse('$baseUrl$path');
+  /// Only when API runs on the **same PC** as the Android emulator (not a remote server).
+  static const String androidEmulatorBaseUrl = 'http://10.0.2.2:8081';
+
+  /// API is on another machine (192.168.7.72); app runs from 192.168.7.76 — use LAN IP.
+  static const String baseUrl = lanBaseUrl;
+
+  static Uri endpoint(String path) {
+    final base = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    final normalized = path.startsWith('/') ? path : '/$path';
+    return Uri.parse('$base$normalized');
+  }
 
   static final Uri login = endpoint('/api/mobile/auth/login');
   static final Uri posSignIn = endpoint('/api/mobile/pos/signin');
@@ -14,7 +27,7 @@ class ApiConfig {
     required int size,
     String search = '',
   }) {
-    return Uri.parse('$baseUrl/api/mobile/inventory/items').replace(
+    return endpoint('/api/mobile/inventory/items').replace(
       queryParameters: <String, String>{
         'page': '$page',
         'size': '$size',

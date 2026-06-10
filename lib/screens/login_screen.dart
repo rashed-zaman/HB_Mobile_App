@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
@@ -53,6 +54,31 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  Future<void> _showLoginDebugDialog(LoginDebugSnapshot snapshot) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Login debug'),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            snapshot.format(),
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              height: 1.35,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleLogin() async {
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
@@ -75,9 +101,12 @@ class _LoginScreenState extends State<LoginScreen>
       final loginResult = await _authService.login(
         username: username,
         password: password,
-        deviceId: deviceId,
       );
       final user = loginResult.user;
+
+      if (kDebugMode && mounted) {
+        await _showLoginDebugDialog(loginResult.debug);
+      }
 
       AuthSession.applyLoginPayload(loginResult.raw);
       if (AuthSession.deviceUuid == null || AuthSession.deviceUuid!.isEmpty) {
@@ -86,13 +115,27 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (!mounted) return;
 
+      final welcomeName = user.fullname.trim().isNotEmpty
+          ? user.fullname.trim()
+          : user.username;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Login successful. Welcome ${user.fullname.trim()}'),
+          content: Text('Login successful. Welcome $welcomeName'),
           backgroundColor: kAccent,
           behavior: SnackBarBehavior.floating,
         ),
       );
+
+      final deviceMessage = AuthSession.deviceMessage?.trim();
+      if (deviceMessage != null && deviceMessage.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(deviceMessage),
+            backgroundColor: Colors.orange.shade800,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
 
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(
@@ -102,6 +145,10 @@ class _LoginScreenState extends State<LoginScreen>
       );
     } on AuthException catch (error) {
       if (!mounted) return;
+
+      if (kDebugMode && error.debug != null) {
+        await _showLoginDebugDialog(error.debug!);
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
