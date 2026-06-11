@@ -31,6 +31,25 @@ Future<String> getOrCreateDeviceId() async {
   return _memoryCache!;
 }
 
+/// Saves a user-provided device id for this install.
+Future<void> setDeviceId(String id) async {
+  final trimmed = id.trim();
+  if (trimmed.isEmpty) return;
+
+  _memoryCache = trimmed;
+
+  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    try {
+      await _channel.invokeMethod<void>('setDeviceId', trimmed);
+      return;
+    } on PlatformException {
+      // Memory cache still updated.
+    } on MissingPluginException {
+      // Memory cache still updated.
+    }
+  }
+}
+
 String _generateLocalId() {
   final now = DateTime.now().microsecondsSinceEpoch;
   final r = DateTime.now().hashCode;

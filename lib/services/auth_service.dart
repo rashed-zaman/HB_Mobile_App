@@ -72,7 +72,6 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
-/// Captures login request/response details for on-screen debug (debug builds only).
 class LoginDebugSnapshot {
   const LoginDebugSnapshot({
     required this.url,
@@ -101,7 +100,7 @@ class LoginDebugSnapshot {
       ..writeln(_prettyMap(headers))
       ..writeln('')
       ..writeln('Body:')
-      ..writeln(_prettyJson(body));
+      ..writeln(_prettyJson(body, redactPassword: true));
 
     if (statusCode != null || responseBody != null) {
       buffer
@@ -131,9 +130,16 @@ class LoginDebugSnapshot {
     return map.entries.map((e) => '  ${e.key}: ${e.value}').join('\n');
   }
 
-  static String _prettyJson(Object value) {
+  static String _prettyJson(Object value, {bool redactPassword = false}) {
     try {
       final dynamic decoded = value is String ? jsonDecode(value) : value;
+      if (decoded is Map<String, dynamic> && redactPassword) {
+        final copy = Map<String, dynamic>.from(decoded);
+        if (copy.containsKey('password')) {
+          copy['password'] = '***';
+        }
+        return const JsonEncoder.withIndent('  ').convert(copy);
+      }
       return const JsonEncoder.withIndent('  ').convert(decoded);
     } catch (_) {
       return value.toString();
@@ -153,16 +159,21 @@ class AuthService {
   })> login({
     required String username,
     required String password,
+    String? deviceId,
   }) async {
+    final trimmedDeviceId = deviceId?.trim();
+    final hasDeviceId =
+        trimmedDeviceId != null && trimmedDeviceId.isNotEmpty;
+
     final requestBody = <String, dynamic>{
       'username': username,
       'password': password,
-      'deviceId': null,
+      'deviceId': hasDeviceId ? trimmedDeviceId : null,
     };
     final requestHeaders = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'X-Device-Id': 'null',
+      'X-Device-Id': hasDeviceId ? trimmedDeviceId : 'null',
     };
 
     LoginDebugSnapshot debugSnapshot = LoginDebugSnapshot(
@@ -172,7 +183,7 @@ class AuthService {
       body: requestBody,
     );
 
-    _debugLogLogin(debugSnapshot.format());
+    _debugLog(debugSnapshot.format());
 
     try {
       final response = await _client
@@ -191,7 +202,7 @@ class AuthService {
         statusCode: response.statusCode,
         responseBody: response.body,
       );
-      _debugLogLogin(debugSnapshot.format());
+      _debugLog(debugSnapshot.format());
 
       final responseBody = _decodeResponse(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -229,8 +240,11 @@ class AuthService {
         body: requestBody,
         error: 'Request timed out',
       );
-      _debugLogLogin(debugSnapshot.format());
-      throw AuthException('Request timed out. Please try again.', debug: debugSnapshot);
+      _debugLog(debugSnapshot.format());
+      throw AuthException(
+        'Request timed out. Please try again.',
+        debug: debugSnapshot,
+      );
     } on http.ClientException catch (error) {
       debugSnapshot = LoginDebugSnapshot(
         url: ApiConfig.login,
@@ -239,7 +253,7 @@ class AuthService {
         body: requestBody,
         error: error.message,
       );
-      _debugLogLogin(debugSnapshot.format());
+      _debugLog(debugSnapshot.format());
       throw AuthException(
         'Unable to reach ${ApiConfig.login}. '
         'Check that the API is running, the device is on the same network, '
@@ -256,15 +270,17 @@ class AuthService {
         body: requestBody,
         error: 'Invalid JSON: $error',
       );
-      _debugLogLogin(debugSnapshot.format());
-      throw AuthException('Invalid server response.', debug: debugSnapshot);
-    } on AuthException catch (error) {
-      _debugLogLogin('ERROR  auth: ${error.message}');
+      _debugLog(debugSnapshot.format());
+      throw AuthException(
+        'Invalid server response.',
+        debug: debugSnapshot,
+      );
+    } on AuthException {
       rethrow;
     }
   }
 
-  static void _debugLogLogin(String message) {
+  static void _debugLog(String message) {
     if (!kDebugMode) return;
     debugPrint('──────── LOGIN API ────────');
     debugPrint(message);

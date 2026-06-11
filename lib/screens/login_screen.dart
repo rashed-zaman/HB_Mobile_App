@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/auth_session.dart';
-import '../services/device_id_store.dart';
+import '../services/bound_device_store.dart';
+import '../services/login_payload_store.dart';
 import 'profile_settings_sheet.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -97,10 +98,11 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
 
     try {
-      final deviceId = await getOrCreateDeviceId();
+      final deviceId = await getSavedDeviceIdForLogin();
       final loginResult = await _authService.login(
         username: username,
         password: password,
+        deviceId: deviceId,
       );
       final user = loginResult.user;
 
@@ -108,8 +110,9 @@ class _LoginScreenState extends State<LoginScreen>
         await _showLoginDebugDialog(loginResult.debug);
       }
 
+      await saveLoginPayload(loginResult.raw);
       AuthSession.applyLoginPayload(loginResult.raw);
-      if (AuthSession.deviceUuid == null || AuthSession.deviceUuid!.isEmpty) {
+      if (deviceId != null && deviceId.isNotEmpty) {
         AuthSession.deviceUuid = deviceId;
       }
 

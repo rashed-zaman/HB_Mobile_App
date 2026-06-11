@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_session.dart';
-import '../services/device_id_store.dart';
+import '../services/pos_sign_in_helper.dart';
 import '../services/pos_shift_service.dart';
 import 'login_screen.dart';
 import 'main.dart' show POSScreen;
+import 'settings_screen.dart';
 
 /// Opens the Profile & Settings panel (modal sheet) from the POS burger menu.
 Future<void> showProfileSettingsSheet(BuildContext context) {
@@ -149,7 +150,11 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               _MenuTile(
                 icon: Icons.settings_outlined,
                 label: 'Setting',
-                onTap: () => _onMenuTap(context, 'Setting'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SettingsScreen(),
+                  ),
+                ),
               ),
               const SizedBox(height: 28),
               _LogoutButton(onPressed: () => _logout(context)),
@@ -262,32 +267,62 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
+  Future<void> _showPosSignInDebugDialog(PosSignInDebugSnapshot snapshot) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('POS sign in debug'),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            snapshot.format(),
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              height: 1.35,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _performPosSignIn(BuildContext context) async {
     if (_isSigningIn || _operationsEnabled) return;
 
-    final employeeId = AuthSession.employeeId;
-    if (employeeId == null || employeeId <= 0) {
-      _showSnack(context, 'Invalid employee id. Please login again.');
-      return;
-    }
-
-    final terminalCode = AuthSession.terminalCode;
-    if (terminalCode == null || terminalCode.trim().isEmpty) {
-      _showSnack(context, 'No POS terminal assigned. Contact admin.');
-      return;
-    }
-
     setState(() => _isSigningIn = true);
     try {
-      final deviceUuid = AuthSession.deviceUuid?.trim().isNotEmpty == true
-          ? AuthSession.deviceUuid!.trim()
-          : await getOrCreateDeviceId();
+      final request = await resolvePosSignInRequest();
+
+      if (!request.isValid) {
+        if (mounted) {
+          await _showPosSignInDebugDialog(
+            request.toDebugSnapshot(
+              error: request.validationError ?? 'Sign in validation failed.',
+            ),
+          );
+          _showSnack(
+            context,
+            request.validationError ?? 'Sign in validation failed.',
+          );
+        }
+        return;
+      }
 
       final result = await _posShiftService.signIn(
-        employeeId: employeeId,
-        terminalCode: terminalCode.trim(),
-        deviceUuid: deviceUuid,
+        employeeId: request.employeeId!,
+        terminalCode: request.terminalCode!,
+        deviceUuid: request.deviceUuid!,
       );
+
+      if (mounted) {
+        await _showPosSignInDebugDialog(result.debug);
+      }
 
       if (!result.status) {
         if (!mounted) return;
@@ -313,6 +348,11 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
       _navigateToPosScreen(context);
     } on PosShiftException catch (error) {
       if (!mounted) return;
+
+      if (error.debug != null) {
+        await _showPosSignInDebugDialog(error.debug!);
+      }
+
       _showSnack(context, error.message);
     } finally {
       if (mounted) {

@@ -1,4 +1,5 @@
 import '../models/mobile_session.dart';
+import 'login_payload_store.dart';
 
 /// In-memory session for login credentials, org context, and POS shift state.
 class AuthSession {
@@ -213,6 +214,15 @@ class AuthSession {
     businessUnit = '—';
     outlet = '—';
     store = '—';
+    clearLoginPayload();
+  }
+
+  /// Restores session fields from persisted login API response.
+  static Future<bool> restoreFromStoredLoginPayload() async {
+    final stored = await getStoredLoginPayload();
+    if (stored == null) return false;
+    applyLoginPayload(stored);
+    return true;
   }
 
   static bool get shiftStatus => posSignedIn;

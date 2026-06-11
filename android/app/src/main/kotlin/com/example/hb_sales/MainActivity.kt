@@ -23,6 +23,57 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(id)
                 }
+                "setDeviceId" -> {
+                    val id = call.arguments as? String
+                    if (id.isNullOrBlank()) {
+                        result.error("INVALID_ID", "Device id is required", null)
+                        return@setMethodCallHandler
+                    }
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString(KEY_DEVICE_ID, id.trim())
+                        .apply()
+                    result.success(null)
+                }
+                "getBoundDeviceData" -> {
+                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    result.success(prefs.getString(KEY_BOUND_DEVICE_DATA, null))
+                }
+                "setBoundDeviceData" -> {
+                    val json = call.arguments as? String
+                    if (json.isNullOrBlank()) {
+                        result.error("INVALID_DATA", "Bound device data is required", null)
+                        return@setMethodCallHandler
+                    }
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString(KEY_BOUND_DEVICE_DATA, json)
+                        .apply()
+                    result.success(null)
+                }
+                "getLoginPayload" -> {
+                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    result.success(prefs.getString(KEY_LOGIN_PAYLOAD, null))
+                }
+                "setLoginPayload" -> {
+                    val json = call.arguments as? String
+                    if (json.isNullOrBlank()) {
+                        result.error("INVALID_DATA", "Login payload is required", null)
+                        return@setMethodCallHandler
+                    }
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString(KEY_LOGIN_PAYLOAD, json)
+                        .apply()
+                    result.success(null)
+                }
+                "clearLoginPayload" -> {
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .remove(KEY_LOGIN_PAYLOAD)
+                        .apply()
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -31,5 +82,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val PREFS_NAME = "hb_sales_prefs"
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_BOUND_DEVICE_DATA = "bound_device_data"
+        private const val KEY_LOGIN_PAYLOAD = "login_payload"
     }
 }

@@ -5,20 +5,22 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../models/bound_device_data.dart';
 import 'auth_session.dart';
 
-class PosShiftException implements Exception {
-  const PosShiftException(this.message, {this.debug});
+class DeviceBindException implements Exception {
+  const DeviceBindException(this.message, {this.debug});
 
   final String message;
-  final PosSignInDebugSnapshot? debug;
+  final DeviceBindDebugSnapshot? debug;
 
   @override
   String toString() => message;
 }
 
-class PosSignInDebugSnapshot {
-  const PosSignInDebugSnapshot({
+/// Request/response details for device bind debug (debug builds only).
+class DeviceBindDebugSnapshot {
+  const DeviceBindDebugSnapshot({
     required this.url,
     required this.method,
     required this.headers,
@@ -38,7 +40,7 @@ class PosSignInDebugSnapshot {
 
   String format() {
     final buffer = StringBuffer()
-      ..writeln('─── POS SIGN IN REQUEST ───')
+      ..writeln('─── DEVICE BIND REQUEST ───')
       ..writeln('$method $url')
       ..writeln('')
       ..writeln('Headers:')
@@ -50,7 +52,7 @@ class PosSignInDebugSnapshot {
     if (statusCode != null || responseBody != null) {
       buffer
         ..writeln('')
-        ..writeln('─── POS SIGN IN RESPONSE ───')
+        ..writeln('─── DEVICE BIND RESPONSE ───')
         ..writeln('Status: ${statusCode ?? '—'}')
         ..writeln('')
         ..writeln('Body:');
@@ -85,47 +87,32 @@ class PosSignInDebugSnapshot {
   }
 }
 
-class PosShiftSignInResult {
-  const PosShiftSignInResult({
-    required this.status,
-    this.message,
-    this.raw,
-    required this.debug,
-  });
-
-  final bool status;
-  final String? message;
-  final Map<String, dynamic>? raw;
-  final PosSignInDebugSnapshot debug;
-}
-
-class PosShiftService {
-  PosShiftService({http.Client? client}) : _client = client ?? http.Client();
+class DeviceBindService {
+  DeviceBindService({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
 
-  Future<PosShiftSignInResult> signIn({
-    required int employeeId,
-    required String terminalCode,
+  Future<({BoundDeviceData data, DeviceBindDebugSnapshot debug})> bind({
     required String deviceUuid,
   }) async {
-    final requestBody = <String, dynamic>{
-      'employeeId': employeeId,
-      'terminalCode': terminalCode,
-      'deviceUuid': deviceUuid,
-    };
+    final trimmed = deviceUuid.trim();
+    if (trimmed.isEmpty) {
+      throw const DeviceBindException('Device Id is required.');
+    }
+
+    final requestBody = <String, dynamic>{'deviceUuid': trimmed};
     final headers = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'X-Device-Id': deviceUuid,
+      'X-Device-Id': trimmed,
     };
     final auth = AuthSession.authorizationHeader;
     if (auth != null) {
       headers['Authorization'] = auth;
     }
 
-    PosSignInDebugSnapshot debugSnapshot = PosSignInDebugSnapshot(
-      url: ApiConfig.posSignIn,
+    DeviceBindDebugSnapshot debugSnapshot = DeviceBindDebugSnapshot(
+      url: ApiConfig.deviceBind,
       method: 'POST',
       headers: headers,
       body: requestBody,
@@ -136,14 +123,14 @@ class PosShiftService {
     try {
       final response = await _client
           .post(
-            ApiConfig.posSignIn,
+            ApiConfig.deviceBind,
             headers: headers,
             body: jsonEncode(requestBody),
           )
           .timeout(const Duration(seconds: 30));
 
-      debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+      debugSnapshot = DeviceBindDebugSnapshot(
+        url: ApiConfig.deviceBind,
         method: 'POST',
         headers: headers,
         body: requestBody,
@@ -152,69 +139,81 @@ class PosShiftService {
       );
       _debugLog(debugSnapshot.format());
 
-      final decoded = _decodeObject(response.body);
+      final body = _decodeObject(response.body);
+
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw PosShiftException(
-          _readErrorMessage(decoded) ?? 'Sign in failed. Please try again.',
+        throw DeviceBindException(
+          _readErrorMessage(body) ?? 'Device bind failed. Please try again.',
           debug: debugSnapshot,
         );
       }
 
-      final status = decoded['status'] == true;
-      final message = decoded['message']?.toString();
-      return PosShiftSignInResult(
-        status: status,
-        message: message,
-        raw: decoded,
+      if (body['status'] != true) {
+        throw DeviceBindException(
+          _readErrorMessage(body) ?? 'Device bind failed. Please try again.',
+          debug: debugSnapshot,
+        );
+      }
+
+      final data = body['data'];
+      if (data is! Map<String, dynamic>) {
+        throw DeviceBindException(
+          'Invalid bind response from server.',
+          debug: debugSnapshot,
+        );
+      }
+
+      return (
+        data: BoundDeviceData.fromJson(data),
         debug: debugSnapshot,
       );
     } on TimeoutException {
-      debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+      debugSnapshot = DeviceBindDebugSnapshot(
+        url: ApiConfig.deviceBind,
         method: 'POST',
         headers: headers,
         body: requestBody,
         error: 'Request timed out',
       );
       _debugLog(debugSnapshot.format());
-      throw PosShiftException(
+      throw DeviceBindException(
         'Request timed out. Please try again.',
         debug: debugSnapshot,
       );
     } on http.ClientException catch (error) {
-      debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+      debugSnapshot = DeviceBindDebugSnapshot(
+        url: ApiConfig.deviceBind,
         method: 'POST',
         headers: headers,
         body: requestBody,
         error: error.message,
       );
       _debugLog(debugSnapshot.format());
-      throw PosShiftException(
+      throw DeviceBindException(
         'Unable to connect to the server: ${error.message}',
         debug: debugSnapshot,
       );
     } on FormatException catch (error) {
-      debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+      debugSnapshot = DeviceBindDebugSnapshot(
+        url: ApiConfig.deviceBind,
         method: 'POST',
         headers: headers,
         body: requestBody,
         error: 'Invalid JSON: $error',
       );
       _debugLog(debugSnapshot.format());
-      throw PosShiftException(
+      throw DeviceBindException(
         'Invalid server response.',
         debug: debugSnapshot,
       );
-    } on PosShiftException {
+    } on DeviceBindException {
       rethrow;
     }
   }
 
   static void _debugLog(String message) {
     if (!kDebugMode) return;
-    debugPrint('──────── POS SIGN IN API ────────');
+    debugPrint('──────── DEVICE BIND API ────────');
     debugPrint(message);
     debugPrint('──────────────────────────────────');
   }
@@ -228,8 +227,7 @@ class PosShiftService {
   }
 
   String? _readErrorMessage(Map<String, dynamic> body) {
-    final message =
-        body['message'] ?? body['error'] ?? body['detail'] ?? body['title'];
+    final message = body['message'] ?? body['error'] ?? body['detail'];
     return message?.toString();
   }
 

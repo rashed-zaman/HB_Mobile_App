@@ -20,6 +20,7 @@ class ApiConfig {
 
   static final Uri login = endpoint('/api/mobile/auth/login');
   static final Uri posSignIn = endpoint('/api/mobile/pos/signin');
+  static final Uri deviceBind = endpoint('/api/mobile/pos/devices/bind');
 
   /// GET `/api/mobile/inventory/items?page=&size=&search=`
   static Uri inventoryItems({
