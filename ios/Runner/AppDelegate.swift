@@ -50,6 +50,12 @@ import UIKit
         }
         UserDefaults.standard.set(json, forKey: AppDelegate.boundDeviceKey)
         result(nil)
+      case "clearBoundDeviceData":
+        UserDefaults.standard.removeObject(forKey: AppDelegate.boundDeviceKey)
+        result(nil)
+      case "clearDeviceId":
+        UserDefaults.standard.removeObject(forKey: AppDelegate.prefsKey)
+        result(nil)
       case "getLoginPayload":
         result(UserDefaults.standard.string(forKey: AppDelegate.loginPayloadKey))
       case "setLoginPayload":

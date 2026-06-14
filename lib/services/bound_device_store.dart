@@ -45,6 +45,20 @@ Future<String?> getSavedDeviceIdForLogin() async {
   return null;
 }
 
+Future<void> clearBoundDeviceData() async {
+  _memoryBoundDevice = null;
+
+  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    try {
+      await _channel.invokeMethod<void>('clearBoundDeviceData');
+    } on PlatformException {
+      // Ignore.
+    } on MissingPluginException {
+      // Ignore.
+    }
+  }
+}
+
 Future<void> saveBoundDeviceData(BoundDeviceData data) async {
   _memoryBoundDevice = data;
   final encoded = jsonEncode(data.toJson());

@@ -31,6 +31,21 @@ Future<String> getOrCreateDeviceId() async {
   return _memoryCache!;
 }
 
+/// Clears the saved device id from this install.
+Future<void> clearDeviceId() async {
+  _memoryCache = null;
+
+  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    try {
+      await _channel.invokeMethod<void>('clearDeviceId');
+    } on PlatformException {
+      // Ignore.
+    } on MissingPluginException {
+      // Ignore.
+    }
+  }
+}
+
 /// Saves a user-provided device id for this install.
 Future<void> setDeviceId(String id) async {
   final trimmed = id.trim();

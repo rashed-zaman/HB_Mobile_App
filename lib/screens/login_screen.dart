@@ -112,8 +112,11 @@ class _LoginScreenState extends State<LoginScreen>
 
       await saveLoginPayload(loginResult.raw);
       AuthSession.applyLoginPayload(loginResult.raw);
-      if (deviceId != null && deviceId.isNotEmpty) {
-        AuthSession.deviceUuid = deviceId;
+      if (deviceId != null && deviceId.trim().isNotEmpty) {
+        AuthSession.deviceUuid = deviceId.trim();
+      } else {
+        AuthSession.deviceUuid = null;
+        AuthSession.deviceActive = false;
       }
 
       if (!mounted) return;

@@ -190,9 +190,10 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
   final _bindService = DeviceBindService();
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isRemoving = false;
   bool _isBound = false;
 
-  bool get _isReadOnly => _isBound || _isSaving;
+  bool get _isReadOnly => _isBound || _isSaving || _isRemoving;
 
   @override
   void initState() {
@@ -212,11 +213,8 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
       return;
     }
 
-    final currentId = AuthSession.deviceUuid?.trim().isNotEmpty == true
-        ? AuthSession.deviceUuid!.trim()
-        : await getOrCreateDeviceId();
     if (!mounted) return;
-    _controller.text = currentId;
+    _controller.clear();
     setState(() => _isLoading = false);
   }
 
@@ -250,6 +248,66 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmRemoveDeviceId() async {
+    if (!_isBound || _isRemoving || _isSaving) return;
+
+    final deviceUuid = _controller.text.trim();
+    if (deviceUuid.isEmpty) {
+      _showSnack('No Device Id to remove.', isError: true);
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Device Id'),
+        content: const Text(
+          'Are you sure you want to remove this Device Id from this device?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    await _removeDeviceId(deviceUuid);
+  }
+
+  Future<void> _removeDeviceId(String deviceUuid) async {
+    setState(() => _isRemoving = true);
+    try {
+      final message = await _bindService.unbind(deviceUuid: deviceUuid);
+
+      await clearBoundDeviceData();
+      await clearDeviceId();
+      AuthSession.deviceUuid = null;
+      AuthSession.deviceActive = false;
+
+      if (!mounted) return;
+      _controller.clear();
+      setState(() => _isBound = false);
+      _showSnack(message);
+    } on DeviceBindException catch (error) {
+      if (!mounted) return;
+      _showSnack(error.message, isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isRemoving = false);
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -328,11 +386,46 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Device Id',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: SettingsScreen.textDark,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_isBound)
+                        TextButton(
+                          onPressed: (_isRemoving || _isSaving)
+                              ? null
+                              : _confirmRemoveDeviceId,
+                          child: _isRemoving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Remove Device Id',
+                                  style: TextStyle(
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   TextField(
                     controller: _controller,
                     readOnly: _isReadOnly,
                     decoration: InputDecoration(
-                      labelText: 'Device Id',
+                      hintText: 'Enter Device Id',
                       border: const OutlineInputBorder(),
                       filled: _isBound,
                       fillColor: _isBound ? const Color(0xFFF5F5F7) : null,
@@ -343,7 +436,7 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
                   if (_isBound) ...[
                     const SizedBox(height: 12),
                     Text(
-                      'This device is bound and cannot be changed.',
+                      'This device is bound. Use Remove Device Id to unbind.',
                       style: TextStyle(
                         fontSize: 13,
                         color: SettingsScreen.textMuted,
@@ -352,7 +445,9 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
                   ],
                   const Spacer(),
                   OutlinedButton(
-                    onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                    onPressed: (_isSaving || _isRemoving)
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       side: const BorderSide(color: Color(0xFFD1D1D6)),
@@ -371,7 +466,9 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
                   ),
                   const SizedBox(height: 12),
                   FilledButton(
-                    onPressed: (_isSaving || _isBound) ? null : _save,
+                    onPressed: (_isSaving || _isRemoving || _isBound)
+                        ? null
+                        : _save,
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF3B82F6),
                       disabledBackgroundColor:

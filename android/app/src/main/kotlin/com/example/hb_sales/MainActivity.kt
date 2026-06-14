@@ -51,6 +51,20 @@ class MainActivity : FlutterActivity() {
                         .apply()
                     result.success(null)
                 }
+                "clearBoundDeviceData" -> {
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .remove(KEY_BOUND_DEVICE_DATA)
+                        .apply()
+                    result.success(null)
+                }
+                "clearDeviceId" -> {
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .remove(KEY_DEVICE_ID)
+                        .apply()
+                    result.success(null)
+                }
                 "getLoginPayload" -> {
                     val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     result.success(prefs.getString(KEY_LOGIN_PAYLOAD, null))

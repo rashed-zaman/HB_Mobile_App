@@ -173,7 +173,8 @@ class AuthService {
     final requestHeaders = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'X-Device-Id': hasDeviceId ? trimmedDeviceId : 'null',
+      if (hasDeviceId) 'X-Device-Id': trimmedDeviceId,
+      if (!hasDeviceId) 'X-Device-Id': 'null',
     };
 
     LoginDebugSnapshot debugSnapshot = LoginDebugSnapshot(

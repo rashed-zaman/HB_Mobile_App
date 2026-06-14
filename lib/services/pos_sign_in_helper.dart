@@ -1,7 +1,6 @@
 import '../config/api_config.dart';
 import 'auth_session.dart';
 import 'bound_device_store.dart';
-import 'device_id_store.dart';
 import 'login_payload_store.dart';
 import 'pos_shift_service.dart';
 
@@ -40,11 +39,12 @@ class PosSignInRequest {
     String? responseBody,
     String? error,
   }) {
-    final uuid = deviceUuid?.trim() ?? '';
+    final uuid = deviceUuid?.trim();
+    final hasDevice = uuid != null && uuid.isNotEmpty;
     final headers = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      if (uuid.isNotEmpty) 'X-Device-Id': uuid,
+      'X-Device-Id': hasDevice ? uuid : 'null',
     };
     final auth = AuthSession.authorizationHeader;
     if (auth != null) {
@@ -96,7 +96,7 @@ Future<PosSignInRequest> resolvePosSignInRequest() async {
     }
   }
   if (deviceUuid == null || deviceUuid.isEmpty) {
-    deviceUuid = await getOrCreateDeviceId();
+    deviceUuid = await getSavedDeviceIdForLogin();
   }
 
   String? validationError;
@@ -104,14 +104,14 @@ Future<PosSignInRequest> resolvePosSignInRequest() async {
     validationError = 'Invalid employee id. Please login again.';
   } else if (terminalCode == null || terminalCode.trim().isEmpty) {
     validationError = 'No POS terminal assigned. Bind device or contact admin.';
-  } else if (deviceUuid.trim().isEmpty) {
+  } else if (deviceUuid == null || deviceUuid.trim().isEmpty) {
     validationError = 'Device Id is required. Set it in Settings first.';
   }
 
   return PosSignInRequest(
     employeeId: employeeId,
     terminalCode: terminalCode?.trim(),
-    deviceUuid: deviceUuid.trim(),
+    deviceUuid: deviceUuid?.trim(),
     validationError: validationError,
   );
 }

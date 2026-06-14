@@ -231,6 +231,64 @@ class DeviceBindService {
     return message?.toString();
   }
 
+  Future<String> unbind({required String deviceUuid}) async {
+    final trimmed = deviceUuid.trim();
+    if (trimmed.isEmpty) {
+      throw const DeviceBindException('Device Id is required.');
+    }
+
+    final requestBody = <String, dynamic>{'deviceUuid': trimmed};
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'X-Device-Id': trimmed,
+    };
+    final auth = AuthSession.authorizationHeader;
+    if (auth != null) {
+      headers['Authorization'] = auth;
+    }
+
+    try {
+      final response = await _client
+          .post(
+            ApiConfig.deviceUnbind,
+            headers: headers,
+            body: jsonEncode(requestBody),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final body = _decodeObject(response.body);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw DeviceBindException(
+          _readErrorMessage(body) ?? 'Device unbind failed. Please try again.',
+        );
+      }
+
+      if (body['status'] != true) {
+        throw DeviceBindException(
+          _readErrorMessage(body) ?? 'Device unbind failed. Please try again.',
+        );
+      }
+
+      final message = body['message']?.toString().trim();
+      if (message != null && message.isNotEmpty) {
+        return message;
+      }
+      return 'Device Id removed successfully.';
+    } on TimeoutException {
+      throw const DeviceBindException('Request timed out. Please try again.');
+    } on http.ClientException catch (error) {
+      throw DeviceBindException(
+        'Unable to connect to the server: ${error.message}',
+      );
+    } on FormatException {
+      throw const DeviceBindException('Invalid server response.');
+    } on DeviceBindException {
+      rethrow;
+    }
+  }
+
   void close() {
     _client.close();
   }
