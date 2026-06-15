@@ -25,6 +25,8 @@ import UIKit
     )
     channel.setMethodCallHandler { call, result in
       switch call.method {
+      case "getDeviceId":
+        result(UserDefaults.standard.string(forKey: AppDelegate.prefsKey))
       case "getOrCreateDeviceId":
         let defaults = UserDefaults.standard
         if let id = defaults.string(forKey: AppDelegate.prefsKey), !id.isEmpty {

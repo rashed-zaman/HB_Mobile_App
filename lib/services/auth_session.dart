@@ -19,6 +19,7 @@ class AuthSession {
   static PosAccessInfo? posAccess;
   static DeviceShiftInfo? deviceShift;
   static List<EmployeeOrgMapping> orgMappings = [];
+  static List<PaymentMethodGroup> paymentMethods = [];
   static Map<String, dynamic>? loginShiftSnapshot;
   static Map<String, dynamic>? rawLoginPayload;
 
@@ -61,6 +62,42 @@ class AuthSession {
     );
   }
 
+  /// Default store from login org mapping (order submit).
+  static int? get defaultStoreId => defaultOrgMapping?.storeId;
+
+  /// Default location from login org mapping.
+  static int? get defaultLocationId => defaultOrgMapping?.locationId;
+
+  /// Active payment providers for a method type (`CASH`, `MFS`, `CARD`, `BANK`).
+  static List<PaymentMethodProvider> providersForMethod(String methodType) {
+    final normalized = methodType.trim().toUpperCase();
+    for (final group in paymentMethods) {
+      if (group.methodType == normalized) {
+        return group.activeProviders;
+      }
+    }
+    return const [];
+  }
+
+  static PaymentMethodProvider? defaultProviderForMethod(String methodType) {
+    final normalized = methodType.trim().toUpperCase();
+    for (final group in paymentMethods) {
+      if (group.methodType == normalized) {
+        return group.defaultProvider;
+      }
+    }
+    return null;
+  }
+
+  static List<PaymentMethodGroup> _parsePaymentMethods(Object? raw) {
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(PaymentMethodGroup.fromJson)
+        .where((g) => g.methodType.isNotEmpty)
+        .toList();
+  }
+
   static void applyLoginPayload(Map<String, dynamic> json) {
     rawLoginPayload = Map<String, dynamic>.from(json);
 
@@ -75,9 +112,13 @@ class AuthSession {
         .toList();
 
     deviceUuid = json['deviceUuid'] as String?;
-    deviceActive =
-        json['deviceBound'] as bool? ?? json['deviceActive'] as bool? ?? false;
+    deviceActive = json['deviceBound'] as bool? ??
+        json['isBind'] as bool? ??
+        json['deviceActive'] as bool? ??
+        false;
     deviceMessage = json['deviceMessage'] as String?;
+
+    paymentMethods = _parsePaymentMethods(json['paymentMethods']);
 
     final pos = json['posAccess'];
     posAccess = pos is Map<String, dynamic> ? PosAccessInfo.fromJson(pos) : null;
@@ -206,6 +247,7 @@ class AuthSession {
     posAccess = null;
     deviceShift = null;
     orgMappings = [];
+    paymentMethods = [];
     loginShiftSnapshot = null;
     rawLoginPayload = null;
     posSignInPayload = null;

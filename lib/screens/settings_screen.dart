@@ -213,6 +213,17 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
       return;
     }
 
+    final stored = await getStoredDeviceId();
+    if (stored != null && stored.trim().isNotEmpty) {
+      _controller.text = stored.trim();
+      if (!mounted) return;
+      setState(() {
+        _isBound = true;
+        _isLoading = false;
+      });
+      return;
+    }
+
     if (!mounted) return;
     _controller.clear();
     setState(() => _isLoading = false);
@@ -264,7 +275,7 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Remove Device Id'),
         content: const Text(
-          'Are you sure you want to remove this Device Id from this device?',
+          'Remove the saved Device Id from this device? You can enter and bind a new one afterward.',
         ),
         actions: [
           TextButton(
@@ -288,9 +299,18 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
 
   Future<void> _removeDeviceId(String deviceUuid) async {
     setState(() => _isRemoving = true);
-    try {
-      final message = await _bindService.unbind(deviceUuid: deviceUuid);
+    var serverUnbindFailed = false;
+    String? serverMessage;
 
+    if (AuthSession.authorizationHeader != null) {
+      try {
+        serverMessage = await _bindService.unbind(deviceUuid: deviceUuid);
+      } on DeviceBindException {
+        serverUnbindFailed = true;
+      }
+    }
+
+    try {
       await clearBoundDeviceData();
       await clearDeviceId();
       AuthSession.deviceUuid = null;
@@ -299,10 +319,17 @@ class _SetDeviceIdScreenState extends State<SetDeviceIdScreen> {
       if (!mounted) return;
       _controller.clear();
       setState(() => _isBound = false);
-      _showSnack(message);
-    } on DeviceBindException catch (error) {
-      if (!mounted) return;
-      _showSnack(error.message, isError: true);
+
+      if (serverUnbindFailed) {
+        _showSnack(
+          'Device Id cleared on this device. Server unbind failed; sign in and try again if needed.',
+        );
+        return;
+      }
+
+      _showSnack(
+        serverMessage ?? 'Device Id removed. You can set a new one now.',
+      );
     } finally {
       if (mounted) {
         setState(() => _isRemoving = false);

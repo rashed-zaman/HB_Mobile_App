@@ -7,6 +7,29 @@ const _channel = MethodChannel('com.example.hb_sales/device_id');
 
 String? _memoryCache;
 
+/// Returns the saved device id without creating a new one.
+Future<String?> getStoredDeviceId() async {
+  if (_memoryCache != null && _memoryCache!.isNotEmpty) {
+    return _memoryCache;
+  }
+
+  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    try {
+      final id = await _channel.invokeMethod<String>('getDeviceId');
+      if (id != null && id.isNotEmpty) {
+        _memoryCache = id;
+        return id;
+      }
+    } on PlatformException {
+      // Fall through.
+    } on MissingPluginException {
+      // Fall through.
+    }
+  }
+
+  return null;
+}
+
 /// Stable per-install identifier used as `device_id` (e.g. for `X-Device-Id`).
 Future<String> getOrCreateDeviceId() async {
   if (_memoryCache != null && _memoryCache!.isNotEmpty) {

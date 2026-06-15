@@ -194,3 +194,89 @@ class PosAccessInfo {
     );
   }
 }
+
+/// One payment option from login `paymentMethods[].providers[]`.
+class PaymentMethodProvider {
+  const PaymentMethodProvider({
+    required this.id,
+    required this.orgId,
+    required this.methodType,
+    this.providerName,
+    this.isDefault = false,
+    this.isActive = true,
+    this.iconImage,
+    this.imageUrl,
+  });
+
+  final int id;
+  final int orgId;
+  final String methodType;
+  final String? providerName;
+  final bool isDefault;
+  final bool isActive;
+  final String? iconImage;
+  final String? imageUrl;
+
+  factory PaymentMethodProvider.fromJson(Map<String, dynamic> json) {
+    return PaymentMethodProvider(
+      id: json['id'] as int? ?? 0,
+      orgId: json['orgId'] as int? ?? 0,
+      methodType: (json['methodType'] as String? ?? '').toUpperCase(),
+      providerName: json['providerName'] as String?,
+      isDefault: json['isDefault'] as bool? ?? false,
+      isActive: json['isActive'] as bool? ?? true,
+      iconImage: json['iconImage'] as String?,
+      imageUrl: json['imageUrl'] as String?,
+    );
+  }
+
+  /// Builds an absolute URL when [imageUrl] is a server-relative path.
+  String? resolveImageUrl(String apiBaseUrl) {
+    final raw = imageUrl?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final base = apiBaseUrl.endsWith('/')
+        ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+        : apiBaseUrl;
+    final path = raw.startsWith('/') ? raw : '/$raw';
+    return '$base$path';
+  }
+}
+
+/// Login `paymentMethods[]` group (CASH, MFS, CARD, BANK).
+class PaymentMethodGroup {
+  const PaymentMethodGroup({
+    required this.methodType,
+    required this.providers,
+  });
+
+  final String methodType;
+  final List<PaymentMethodProvider> providers;
+
+  List<PaymentMethodProvider> get activeProviders =>
+      providers.where((p) => p.isActive).toList();
+
+  PaymentMethodProvider? get defaultProvider {
+    final active = activeProviders;
+    if (active.isEmpty) return null;
+    return active.firstWhere(
+      (p) => p.isDefault,
+      orElse: () => active.first,
+    );
+  }
+
+  factory PaymentMethodGroup.fromJson(Map<String, dynamic> json) {
+    final rawProviders = json['providers'];
+    final providers = rawProviders is List
+        ? rawProviders
+            .whereType<Map<String, dynamic>>()
+            .map(PaymentMethodProvider.fromJson)
+            .toList()
+        : <PaymentMethodProvider>[];
+
+    return PaymentMethodGroup(
+      methodType: (json['methodType'] as String? ?? '').toUpperCase(),
+      providers: providers,
+    );
+  }
+}

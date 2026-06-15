@@ -116,7 +116,9 @@ class _LoginScreenState extends State<LoginScreen>
         AuthSession.deviceUuid = deviceId.trim();
       } else {
         AuthSession.deviceUuid = null;
-        AuthSession.deviceActive = false;
+        if (!AuthSession.deviceActive) {
+          AuthSession.deviceActive = false;
+        }
       }
 
       if (!mounted) return;

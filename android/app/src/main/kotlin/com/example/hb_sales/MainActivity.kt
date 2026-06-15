@@ -14,6 +14,10 @@ class MainActivity : FlutterActivity() {
             "com.example.hb_sales/device_id",
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "getDeviceId" -> {
+                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    result.success(prefs.getString(KEY_DEVICE_ID, null))
+                }
                 "getOrCreateDeviceId" -> {
                     val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     var id = prefs.getString(KEY_DEVICE_ID, null)
