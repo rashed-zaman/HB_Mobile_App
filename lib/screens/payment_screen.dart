@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/mobile_session.dart';
+import '../services/auth_session.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,7 +74,18 @@ class _PaymentEntry {
       case _PaymentType.cash:
         return _CashLogo();
       case _PaymentType.mfs:
-        return _MfsProviderIcon(provider: detail ?? '');
+        final name = detail ?? '';
+        PaymentMethodProvider? match;
+        for (final p in AuthSession.providersForMethod('MFS')) {
+          if ((p.providerName ?? '').toLowerCase() == name.toLowerCase()) {
+            match = p;
+            break;
+          }
+        }
+        return _MfsProviderIcon(
+          provider: name,
+          imageUrl: match?.fullImageUrl,
+        );
       case _PaymentType.card:
         return _CardIcon(lastFour: detail ?? '');
     }
@@ -247,7 +261,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       onTap: _showCashSheet,
                     ),
                     _PaymentMethodRow(
-                      leading: _MfsLogo(),
+                      leading: const _MfsProvidersPreview(),
                       title: 'MFS',
                       onTap: _showMfsSheet,
                     ),
@@ -281,7 +295,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           onTap: _showCashSheet,
                         ),
                       _PaymentMethodRow(
-                        leading: _MfsLogo(),
+                        leading: const _MfsProvidersPreview(),
                         title: 'MFS',
                         onTap: _showMfsSheet,
                       ),
@@ -754,11 +768,11 @@ class _MfsSheet extends StatefulWidget {
 }
 
 class _MfsSheetState extends State<_MfsSheet> {
-  String? _selectedProvider;
+  List<PaymentMethodProvider> _providers = [];
+  PaymentMethodProvider? _selectedProvider;
+  bool _loadingProviders = true;
   final _amountCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
-
-  static const _providers = ['bKash', 'Nagad', 'Upay'];
 
   double get _enteredAmount => double.tryParse(_amountCtrl.text) ?? 0;
   bool get _isAmountWithinRemaining =>
@@ -768,6 +782,26 @@ class _MfsSheetState extends State<_MfsSheet> {
       _selectedProvider != null &&
       _isAmountWithinRemaining &&
       (_phoneCtrl.text.length == 4);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProvidersFromSession();
+  }
+
+  Future<void> _loadProvidersFromSession() async {
+    if (AuthSession.providersForMethod('MFS').isEmpty) {
+      await AuthSession.restoreFromStoredLoginPayload();
+    }
+    final providers = AuthSession.providersForMethod('MFS');
+    if (!mounted) return;
+    setState(() {
+      _providers = providers;
+      _selectedProvider = AuthSession.defaultProviderForMethod('MFS') ??
+          (providers.isNotEmpty ? providers.first : null);
+      _loadingProviders = false;
+    });
+  }
 
   @override
   void dispose() {
@@ -822,35 +856,63 @@ class _MfsSheetState extends State<_MfsSheet> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: _providers.map((p) {
-                    final isSelected = _selectedProvider == p;
-                    final isLast = p == _providers.last;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedProvider = p),
-                        child: Container(
-                          margin: EdgeInsets.only(right: isLast ? 0 : 10),
-                          height: 76,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFFF0F4FF)
-                                : const Color(0xFFF8F9FA),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
+                if (_loadingProviders)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 28),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_providers.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'No MFS providers found. Sign in again to refresh payment methods.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  )
+                else
+                  Row(
+                    children: _providers.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final provider = entry.value;
+                      final isSelected = _selectedProvider?.id == provider.id;
+                      final isLast = index == _providers.length - 1;
+                      final label =
+                          provider.providerName?.trim().isNotEmpty == true
+                              ? provider.providerName!.trim()
+                              : 'MFS';
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () =>
+                              setState(() => _selectedProvider = provider),
+                          child: Container(
+                            margin: EdgeInsets.only(right: isLast ? 0 : 10),
+                            height: 76,
+                            decoration: BoxDecoration(
                               color: isSelected
-                                  ? const Color(0xFF0D1117)
-                                  : const Color(0xFFE5E7EB),
-                              width: isSelected ? 2 : 1,
+                                  ? const Color(0xFFF0F4FF)
+                                  : const Color(0xFFF8F9FA),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF0D1117)
+                                    : const Color(0xFFE5E7EB),
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: _MfsProviderIcon(
+                              provider: label,
+                              imageUrl: provider.fullImageUrl,
                             ),
                           ),
-                          alignment: Alignment.center,
-                          child: _MfsProviderIcon(provider: p),
                         ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+                      );
+                    }).toList(),
+                  ),
                 const SizedBox(height: 14),
                 _OutlinedField(
                   controller: _amountCtrl,
@@ -900,7 +962,12 @@ class _MfsSheetState extends State<_MfsSheet> {
                               _PaymentEntry(
                                 type: _PaymentType.mfs,
                                 amount: amount,
-                                detail: _selectedProvider,
+                                detail: _selectedProvider!.providerName
+                                            ?.trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? _selectedProvider!.providerName!.trim()
+                                    : 'MFS',
                               ),
                             );
                           }
@@ -1812,8 +1879,48 @@ class _CashLogo extends StatelessWidget {
   }
 }
 
-class _MfsLogo extends StatelessWidget {
-  static const String _assetPath = 'assets/images/mfs.png';
+class _MfsProvidersPreview extends StatelessWidget {
+  const _MfsProvidersPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    final providers = AuthSession.providersForMethod('MFS');
+    if (providers.isEmpty) {
+      return const _MfsLogoFallback();
+    }
+
+    return SizedBox(
+      width: 52,
+      height: 34,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: providers.take(3).map((p) {
+          final url = p.fullImageUrl;
+          return Padding(
+            padding: const EdgeInsets.only(right: 3),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: url != null
+                  ? Image.network(
+                      url,
+                      width: 15,
+                      height: 15,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => _MfsProviderIcon(
+                        provider: p.providerName ?? 'MFS',
+                      ),
+                    )
+                  : _MfsProviderIcon(provider: p.providerName ?? 'MFS'),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _MfsLogoFallback extends StatelessWidget {
+  const _MfsLogoFallback();
 
   @override
   Widget build(BuildContext context) {
@@ -1823,7 +1930,7 @@ class _MfsLogo extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(7),
         child: Image.asset(
-          _assetPath,
+          'assets/images/mfs.png',
           fit: BoxFit.contain,
           filterQuality: FilterQuality.medium,
           errorBuilder: (context, error, stackTrace) => Container(
@@ -1899,20 +2006,46 @@ class _BanglaQrLogo extends StatelessWidget {
   }
 }
 
-/// Small provider icon used inside MFS sheet & confirmed row
+/// Provider logo from login `imageUrl` → [ApiConfig.baseUrl] + path.
 class _MfsProviderIcon extends StatelessWidget {
   final String provider;
-  const _MfsProviderIcon({required this.provider});
+  final String? imageUrl;
+
+  const _MfsProviderIcon({
+    required this.provider,
+    this.imageUrl,
+  });
+
+  static String? _assetForProvider(String name) {
+    switch (name.toLowerCase()) {
+      case 'bkash':
+        return 'assets/images/bkash-mfs.png';
+      case 'nagad':
+        return 'assets/images/nogod-mfs.png';
+      case 'upay':
+        return 'assets/images/upay-mfs.png';
+      default:
+        return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Map provider name → asset; fall back to a coloured icon
-    final assetMap = {
-      'bKash': 'assets/images/bkash-mfs.png',
-      'Nagad': 'assets/images/nogod-mfs.png',
-      'Upay': 'assets/images/upay-mfs.png',
-    };
-    final path = assetMap[provider];
+    final url = imageUrl?.trim();
+    if (url != null && url.isNotEmpty) {
+      return Image.network(
+        url,
+        width: 68,
+        height: 44,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _buildAssetOrFallback(),
+      );
+    }
+    return _buildAssetOrFallback();
+  }
+
+  Widget _buildAssetOrFallback() {
+    final path = _assetForProvider(provider);
     if (path != null) {
       return Image.asset(
         path,

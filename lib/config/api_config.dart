@@ -18,6 +18,17 @@ class ApiConfig {
     return Uri.parse('$base$normalized');
   }
 
+  /// Login `paymentMethods.providers[].imageUrl` → full URL for [Image.network].
+  ///
+  /// Example: `/uploads/payment-method-images/abc.jpg`
+  /// → `http://192.168.7.72:8081/uploads/payment-method-images/abc.jpg`
+  static String? resolveImageUrl(String? imageUrl) {
+    final raw = imageUrl?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    return endpoint(raw).toString();
+  }
+
   static final Uri login = endpoint('/api/mobile/auth/login');
   static final Uri posSignIn = endpoint('/api/mobile/pos/signin');
   static final Uri deviceBind = endpoint('/api/mobile/pos/devices/bind');

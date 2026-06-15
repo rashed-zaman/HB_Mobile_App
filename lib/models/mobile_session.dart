@@ -1,3 +1,5 @@
+import '../config/api_config.dart';
+
 /// Parsed login / POS context from mobile auth APIs.
 class EmployeeOrgMapping {
   const EmployeeOrgMapping({
@@ -230,17 +232,8 @@ class PaymentMethodProvider {
     );
   }
 
-  /// Builds an absolute URL when [imageUrl] is a server-relative path.
-  String? resolveImageUrl(String apiBaseUrl) {
-    final raw = imageUrl?.trim();
-    if (raw == null || raw.isEmpty) return null;
-    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-    final base = apiBaseUrl.endsWith('/')
-        ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
-        : apiBaseUrl;
-    final path = raw.startsWith('/') ? raw : '/$raw';
-    return '$base$path';
-  }
+  /// Full image URL from login `imageUrl` (not `iconImage`).
+  String? get fullImageUrl => ApiConfig.resolveImageUrl(imageUrl);
 }
 
 /// Login `paymentMethods[]` group (CASH, MFS, CARD, BANK).
