@@ -2,7 +2,7 @@ class ApiConfig {
   ApiConfig._();
 
   /// API server on the LAN (e.g. machine at 192.168.7.72).
-  static const String lanBaseUrl = 'http://152.42.172.45';
+  static const String lanBaseUrl = 'http://192.168.7.76:8081';
 
   /// Only when API runs on the **same PC** as the Android emulator (not a remote server).
   static const String androidEmulatorBaseUrl = 'http://10.0.2.2:8081';
