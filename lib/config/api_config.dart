@@ -2,7 +2,7 @@ class ApiConfig {
   ApiConfig._();
 
   /// API server on the LAN (e.g. machine at 192.168.7.72).
-  static const String lanBaseUrl = 'http://192.168.7.72:8081';
+  static const String lanBaseUrl = 'http://152.42.172.45';
 
   /// Only when API runs on the **same PC** as the Android emulator (not a remote server).
   static const String androidEmulatorBaseUrl = 'http://10.0.2.2:8081';
@@ -33,6 +33,27 @@ class ApiConfig {
   static final Uri posSignIn = endpoint('/api/mobile/pos/signin');
   static final Uri deviceBind = endpoint('/api/mobile/pos/devices/bind');
   static final Uri deviceUnbind = endpoint('/api/mobile/pos/devices/unbind');
+
+  static final Uri expressSavePrint =
+      endpoint('/api/mobile/sales/pos/express/bills/save-print');
+
+  /// GET `/api/mobile/accounts/stakeholders-customer?page=&size=&search=`
+  static Uri stakeholdersCustomer({
+    required int page,
+    required int size,
+    String search = '',
+    String? customerType,
+  }) {
+    final params = <String, String>{
+      'page': '$page',
+      'size': '$size',
+      if (search.isNotEmpty) 'search': search,
+      if (customerType != null && customerType.isNotEmpty)
+        'customerType': customerType,
+    };
+    return endpoint('/api/mobile/accounts/stakeholders-customer')
+        .replace(queryParameters: params);
+  }
 
   /// GET `/api/mobile/inventory/items?page=&size=&search=`
   static Uri inventoryItems({

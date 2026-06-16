@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/checkout_order.dart';
 import '../models/product.dart';
 import 'payment_screen.dart';          // ← new
 import 'quantity_bottom_sheet.dart';
@@ -9,17 +10,27 @@ import 'search_customer.dart';
 import 'search_product.dart';
 
 class CartItem {
+  final int? itemId;
   final String name;
   final double price;
   final String? code;
   int quantity;
 
   CartItem({
+    this.itemId,
     required this.name,
     required this.price,
     this.code,
     this.quantity = 1,
   });
+
+  CheckoutLineItem toCheckoutLineItem() => CheckoutLineItem(
+        itemId: itemId,
+        itemCode: code?.trim().isNotEmpty == true ? code!.trim() : name,
+        itemName: name,
+        quantity: quantity.toDouble(),
+        rate: price,
+      );
 }
 
 String formatAmount(num value, {bool keepTwoDecimals = false}) {
@@ -147,6 +158,7 @@ class _POSScreenState extends State<POSScreen> {
           name: product.name,
           price: product.price,
           code: product.code.isEmpty ? null : product.code,
+          itemId: product.itemId,
           quantity: quantity,
         ));
       }
@@ -189,8 +201,12 @@ class _POSScreenState extends State<POSScreen> {
     if (_cartItems.isEmpty) return;
     final invoice = _invoiceNumber;
     final items = List<CartItem>.from(_cartItems);
+    final lineItems = items.map((e) => e.toCheckoutLineItem()).toList();
     final total = _totalPayable;
     final totalItems = _totalItems;
+    final selectedCustomer = _selectedCustomer;
+    final walkInName = _nameController.text.trim();
+    final walkInPhone = _phoneController.text.trim();
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -204,11 +220,21 @@ class _POSScreenState extends State<POSScreen> {
               _selectedCustomer = null;
             });
           },
-          // Build the destination after loading animation
-          destinationBuilder: (onPrint) => PaymentScreen(   // ← new
+          destinationBuilder: (onPrint) => PaymentScreen(
             invoiceNumber: invoice,
             itemCount: totalItems,
             totalBill: total,
+            lineItems: lineItems,
+            customer: CheckoutCustomerInfo(
+              customerId: selectedCustomer?.id,
+              customerCode: selectedCustomer?.code,
+              customerName: walkInName.isNotEmpty
+                  ? walkInName
+                  : selectedCustomer?.name,
+              phoneNo: walkInPhone.isNotEmpty
+                  ? walkInPhone
+                  : selectedCustomer?.phone,
+            ),
             onPrintReceipt: onPrint,
           ),
         ),

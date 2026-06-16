@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/checkout_order.dart';
 import '../models/mobile_session.dart';
+import '../models/pos_bill_response.dart';
 import '../services/auth_session.dart';
+import '../services/express_billing_service.dart';
+import 'invoice_preview_screen.dart';
+import '../receipt/receipt_print_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -49,14 +54,41 @@ double? parseMoneyInput(String raw) {
 
 enum _PaymentType { cash, mfs, card }
 
+/// Login `paymentMethods` provider `id` for order submit (`PosPaymentDTO.configId`).
+int? _paymentConfigIdForMethod(String methodType) {
+  final provider = AuthSession.defaultProviderForMethod(methodType);
+  if (provider != null && provider.id > 0) return provider.id;
+  final providers = AuthSession.providersForMethod(methodType);
+  if (providers.isNotEmpty && providers.first.id > 0) {
+    return providers.first.id;
+  }
+  return null;
+}
+
 class _PaymentEntry {
   final _PaymentType type;
   final double amount;
 
-  /// For MFS: provider name ("bKash", "Nagad", "Upay"); for card: last-4 digits
+  /// MFS: provider name. Card: last 4 digits (legacy `detail`).
   final String? detail;
 
-  const _PaymentEntry({required this.type, required this.amount, this.detail});
+  /// Card network name (Visa, Master, …).
+  final String? cardProvider;
+
+  /// MFS / card reference (last 4 digits).
+  final String? accountReference;
+
+  /// Login `paymentMethods.providers[].id` (e.g. CASH → 1).
+  final int? paymentConfigId;
+
+  const _PaymentEntry({
+    required this.type,
+    required this.amount,
+    this.detail,
+    this.cardProvider,
+    this.accountReference,
+    this.paymentConfigId,
+  });
 
   String get label {
     switch (type) {
@@ -65,7 +97,9 @@ class _PaymentEntry {
       case _PaymentType.mfs:
         return detail ?? 'MFS';
       case _PaymentType.card:
-        return 'Mastercard'; // you can derive from detail
+        return cardProvider?.trim().isNotEmpty == true
+            ? cardProvider!.trim()
+            : 'Card';
     }
   }
 
@@ -87,7 +121,18 @@ class _PaymentEntry {
           imageUrl: match?.fullImageUrl,
         );
       case _PaymentType.card:
-        return _CardIcon(lastFour: detail ?? '');
+        final name = cardProvider?.trim() ?? '';
+        PaymentMethodProvider? match;
+        for (final p in AuthSession.providersForMethod('CARD')) {
+          if ((p.providerName ?? '').toLowerCase() == name.toLowerCase()) {
+            match = p;
+            break;
+          }
+        }
+        return _CardProviderIcon(
+          provider: name.isNotEmpty ? name : 'Card',
+          imageUrl: match?.fullImageUrl,
+        );
     }
   }
 }
@@ -100,6 +145,8 @@ class PaymentScreen extends StatefulWidget {
   final String invoiceNumber;
   final int itemCount;
   final double totalBill;
+  final List<CheckoutLineItem> lineItems;
+  final CheckoutCustomerInfo customer;
   final VoidCallback onPrintReceipt;
 
   const PaymentScreen({
@@ -107,6 +154,8 @@ class PaymentScreen extends StatefulWidget {
     required this.invoiceNumber,
     required this.itemCount,
     required this.totalBill,
+    required this.lineItems,
+    required this.customer,
     required this.onPrintReceipt,
   });
 
@@ -117,6 +166,8 @@ class PaymentScreen extends StatefulWidget {
 class _PaymentScreenState extends State<PaymentScreen> {
   double _discountTotal = 0;
   final List<_PaymentEntry> _payments = [];
+  bool _isSubmittingBill = false;
+  final _billingService = ExpressBillingService();
 
   double get _netPayable =>
       (widget.totalBill - _discountTotal).clamp(0.0, double.infinity);
@@ -133,6 +184,180 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String get _invoiceLabel {
     final parts = widget.invoiceNumber.split('-');
     return '#${parts.last}';
+  }
+
+  @override
+  void dispose() {
+    _billingService.close();
+    super.dispose();
+  }
+
+  void _showSnack(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.redAccent : null,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  int? _configIdForProviderName(String methodType, String? providerName) {
+    if (providerName == null || providerName.trim().isEmpty) {
+      return _paymentConfigIdForMethod(methodType);
+    }
+    for (final p in AuthSession.providersForMethod(methodType)) {
+      if ((p.providerName ?? '').toLowerCase() == providerName.toLowerCase()) {
+        return p.id > 0 ? p.id : null;
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _paymentEntryToJson(_PaymentEntry entry) {
+    final amount = double.parse(entry.amount.toStringAsFixed(2));
+    switch (entry.type) {
+      case _PaymentType.cash:
+        return {
+          'configId': entry.paymentConfigId ?? _paymentConfigIdForMethod('CASH'),
+          'paymentMethod': 'CASH',
+          'amount': amount,
+        };
+      case _PaymentType.mfs:
+        return {
+          'configId': entry.paymentConfigId ??
+              _configIdForProviderName('MFS', entry.detail),
+          'paymentMethod': 'MFS',
+          'providerName': entry.detail,
+          if (entry.accountReference != null &&
+              entry.accountReference!.trim().isNotEmpty)
+            'accountReference': entry.accountReference!.trim(),
+          'amount': amount,
+        };
+      case _PaymentType.card:
+        final ref = entry.accountReference?.trim().isNotEmpty == true
+            ? entry.accountReference!.trim()
+            : entry.detail?.trim();
+        return {
+          'configId': entry.paymentConfigId ??
+              _configIdForProviderName('CARD', entry.cardProvider),
+          'paymentMethod': 'CARD',
+          if (entry.cardProvider != null && entry.cardProvider!.trim().isNotEmpty)
+            'providerName': entry.cardProvider!.trim(),
+          if (ref != null && ref.isNotEmpty) 'accountReference': ref,
+          'amount': amount,
+        };
+    }
+  }
+
+  Map<String, dynamic> _buildSavePrintBody() {
+    final now = DateTime.now();
+    final saleDate =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final storeId = AuthSession.defaultStoreId;
+
+    return {
+      if (storeId != null && storeId > 0) 'storeId': storeId,
+      'billType': 'EXPRESS',
+      ...widget.customer.toBillJson(),
+      'saleDate': saleDate,
+      'moreInfo': widget.invoiceNumber,
+      'discountPercent': 0,
+      'discountAmount': double.parse(_discountTotal.toStringAsFixed(2)),
+      'allowOverpayment': _receivedAmount > _netPayable,
+      'items': widget.lineItems.map((e) => e.toBillJson()).toList(),
+      'payments': _payments.map(_paymentEntryToJson).toList(),
+    };
+  }
+
+  String? _validateBeforeSubmit() {
+    if (AuthSession.authorizationHeader == null) {
+      return 'Please sign in again.';
+    }
+    if (widget.lineItems.isEmpty) {
+      return 'No items to submit.';
+    }
+    for (final item in widget.lineItems) {
+      if (item.itemId == null || item.itemId! <= 0) {
+        return 'Item "${item.itemName}" is missing inventory id. Re-add from product search.';
+      }
+    }
+    if (_payments.isEmpty) {
+      return 'Add at least one payment before printing.';
+    }
+    if (_receivedAmount + 0.001 < _netPayable) {
+      return 'Received amount is less than net payable.';
+    }
+    for (final payment in _payments) {
+      final json = _paymentEntryToJson(payment);
+      final configId = json['configId'];
+      if (configId == null || (configId is int && configId <= 0)) {
+        return 'Payment method is missing config id. Sign in again.';
+      }
+    }
+    final storeId = AuthSession.defaultStoreId;
+    if (storeId == null || storeId <= 0) {
+      return 'Store is not configured for this user.';
+    }
+    return null;
+  }
+
+  Future<void> _handlePrintReceipt() async {
+    if (_isSubmittingBill) return;
+
+    if (AuthSession.paymentMethods.isEmpty) {
+      await AuthSession.restoreFromStoredLoginPayload();
+    }
+
+    final validationError = _validateBeforeSubmit();
+    if (validationError != null) {
+      _showSnack(validationError, isError: true);
+      return;
+    }
+
+    final terminalCode = await resolvePosTerminalCode();
+    if (terminalCode == null || terminalCode.trim().isEmpty) {
+      _showSnack(
+        'POS terminal code is required. Sign in to terminal first.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _isSubmittingBill = true);
+    try {
+      final body = _buildSavePrintBody();
+      final result = await _billingService.saveAndPrint(
+        body: body,
+        terminalCode: terminalCode,
+      );
+
+      if (!mounted) return;
+
+      final bill = PosBillResponse.fromJson(result);
+      final printContext = await ReceiptPrintContext.fromBill(bill);
+
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => InvoicePreviewScreen(
+            bill: bill,
+            printContext: printContext,
+            autoPrint: true,
+          ),
+        ),
+      );
+
+      if (!mounted) return;
+      widget.onPrintReceipt();
+    } on ExpressBillingException catch (error) {
+      if (!mounted) return;
+      _showSnack(error.message, isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmittingBill = false);
+      }
+    }
   }
 
   // ── Show Add Discount bottom sheet ────────────────────────────────────────
@@ -158,7 +383,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
     if (result != null && result > 0 && mounted) {
       setState(() {
-        _payments.add(_PaymentEntry(type: _PaymentType.cash, amount: result));
+        _payments.add(
+          _PaymentEntry(
+            type: _PaymentType.cash,
+            amount: result,
+            paymentConfigId: _paymentConfigIdForMethod('CASH'),
+          ),
+        );
       });
     }
   }
@@ -207,7 +438,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       if (result != null && result > 0 && mounted) {
         setState(() {
-          _payments[index] = _PaymentEntry(type: _PaymentType.cash, amount: result);
+          _payments[index] = _PaymentEntry(
+            type: _PaymentType.cash,
+            amount: result,
+            paymentConfigId:
+                entry.paymentConfigId ?? _paymentConfigIdForMethod('CASH'),
+          );
         });
       }
       return;
@@ -333,7 +569,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _PrintBar(onPrint: widget.onPrintReceipt),
+      bottomNavigationBar: _PrintBar(
+        onPrint: _handlePrintReceipt,
+        isSubmitting: _isSubmittingBill,
+      ),
     );
   }
 }
@@ -968,6 +1207,10 @@ class _MfsSheetState extends State<_MfsSheet> {
                                         true
                                     ? _selectedProvider!.providerName!.trim()
                                     : 'MFS',
+                                accountReference: _phoneCtrl.text.trim(),
+                                paymentConfigId: _selectedProvider!.id > 0
+                                    ? _selectedProvider!.id
+                                    : null,
                               ),
                             );
                           }
@@ -1012,6 +1255,9 @@ class _CardSheet extends StatefulWidget {
 }
 
 class _CardSheetState extends State<_CardSheet> {
+  List<PaymentMethodProvider> _providers = [];
+  PaymentMethodProvider? _selectedProvider;
+  bool _loadingProviders = true;
   String _digits = '';
   final _lastFourCtrl = TextEditingController();
 
@@ -1023,7 +1269,30 @@ class _CardSheetState extends State<_CardSheet> {
   bool get _isAmountWithinRemaining =>
       _enteredAmount > 0 && _enteredAmount <= widget.remainingAmount;
 
-  bool get _canConfirm => _isAmountWithinRemaining && _lastFourCtrl.text.length == 4;
+  bool get _canConfirm =>
+      _selectedProvider != null &&
+      _isAmountWithinRemaining &&
+      _lastFourCtrl.text.length == 4;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProvidersFromSession();
+  }
+
+  Future<void> _loadProvidersFromSession() async {
+    if (AuthSession.providersForMethod('CARD').isEmpty) {
+      await AuthSession.restoreFromStoredLoginPayload();
+    }
+    final providers = AuthSession.providersForMethod('CARD');
+    if (!mounted) return;
+    setState(() {
+      _providers = providers;
+      _selectedProvider = AuthSession.defaultProviderForMethod('CARD') ??
+          (providers.isNotEmpty ? providers.first : null);
+      _loadingProviders = false;
+    });
+  }
 
   void _appendDigit(String d) {
     setState(() {
@@ -1114,6 +1383,66 @@ class _CardSheetState extends State<_CardSheet> {
               ],
             ),
           ),
+
+          const SizedBox(height: 14),
+
+          if (_loadingProviders)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_providers.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text(
+                'No card providers found. Sign in again to refresh payment methods.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: _providers.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final provider = entry.value;
+                  final isSelected = _selectedProvider?.id == provider.id;
+                  final isLast = index == _providers.length - 1;
+                  final label =
+                      provider.providerName?.trim().isNotEmpty == true
+                          ? provider.providerName!.trim()
+                          : 'Card';
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () =>
+                          setState(() => _selectedProvider = provider),
+                      child: Container(
+                        margin: EdgeInsets.only(right: isLast ? 0 : 10),
+                        height: 76,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFF0F4FF)
+                              : const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF0D1117)
+                                : const Color(0xFFE5E7EB),
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: _CardProviderIcon(
+                          provider: label,
+                          imageUrl: provider.fullImageUrl,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
 
           const SizedBox(height: 14),
 
@@ -1244,6 +1573,16 @@ class _CardSheetState extends State<_CardSheet> {
                             type: _PaymentType.card,
                             amount: _enteredAmount,
                             detail: _lastFourCtrl.text,
+                            accountReference: _lastFourCtrl.text,
+                            cardProvider: _selectedProvider!.providerName
+                                        ?.trim()
+                                        .isNotEmpty ==
+                                    true
+                                ? _selectedProvider!.providerName!.trim()
+                                : 'Card',
+                            paymentConfigId: _selectedProvider!.id > 0
+                                ? _selectedProvider!.id
+                                : null,
                           ),
                         );
                       }
@@ -1790,7 +2129,8 @@ class _Divider extends StatelessWidget {
 
 class _PrintBar extends StatelessWidget {
   final VoidCallback onPrint;
-  const _PrintBar({required this.onPrint});
+  final bool isSubmitting;
+  const _PrintBar({required this.onPrint, this.isSubmitting = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1819,10 +2159,19 @@ class _PrintBar extends StatelessWidget {
             child: SizedBox(
               height: 52,
               child: ElevatedButton.icon(
-                onPressed: onPrint,
-                icon: const Icon(Icons.print_outlined, size: 20),
-                label: const Text(
-                  'Print receipt',
+                onPressed: isSubmitting ? null : onPrint,
+                icon: isSubmitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.print_outlined, size: 20),
+                label: Text(
+                  isSubmitting ? 'Submitting…' : 'Print receipt',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -2075,28 +2424,94 @@ class _MfsProviderIcon extends StatelessWidget {
   }
 }
 
-/// Card icon that shows a network logo based on last 4 digits
-class _CardIcon extends StatelessWidget {
-  final String lastFour;
-  const _CardIcon({required this.lastFour});
+/// Card network logo in Card Payment sheet & confirmed payment row.
+class _CardProviderIcon extends StatelessWidget {
+  final String provider;
+  final String? imageUrl;
+
+  const _CardProviderIcon({
+    required this.provider,
+    this.imageUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final url = imageUrl?.trim();
+    if (url != null && url.isNotEmpty) {
+      return Image.network(
+        url,
+        width: 68,
+        height: 44,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _brandFallback(provider),
+      );
+    }
+    return _brandFallback(provider);
+  }
+
+  Widget _brandFallback(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('visa')) {
+      return Container(
+        width: 68,
+        height: 44,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1F71),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        alignment: Alignment.center,
+        child: const Text(
+          'VISA',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.5,
+          ),
+        ),
+      );
+    }
+    if (lower.contains('master')) {
+      return Container(
+        width: 68,
+        height: 44,
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEB001B),
+                shape: BoxShape.circle,
+              ),
+            ),
+            Transform.translate(
+              offset: const Offset(-8, 0),
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF79E1B).withValues(alpha: 0.95),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
-      width: 36,
-      height: 24,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1F71),
-        borderRadius: BorderRadius.circular(4),
-      ),
+      width: 48,
+      height: 36,
       alignment: Alignment.center,
-      child: const Text(
-        'VISA',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 9,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.5,
+      child: Text(
+        name.isEmpty ? 'Card' : name[0],
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF2563EB),
         ),
       ),
     );

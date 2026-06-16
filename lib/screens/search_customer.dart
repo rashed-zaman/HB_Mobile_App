@@ -1,32 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-// ─────────────────────────────────────────────────────────────
-// Model
-// ─────────────────────────────────────────────────────────────
-class Customer {
-  final String name;
-  final String code;
-  final String phone;
+import '../models/customer.dart';
+import '../services/customer_service.dart';
 
-  const Customer({required this.name, required this.code, required this.phone});
-}
-
-// ─────────────────────────────────────────────────────────────
-// Sample data (replace with API/DB call)
-// ─────────────────────────────────────────────────────────────
-const List<Customer> _allCustomers = [
-  Customer(
-    name: 'General Customer',
-    code: 'Cust - 00000',
-    phone: '01673-XXXXXX',
-  ),
-  Customer(name: 'Hasan khan', code: 'Cust - 00001', phone: '01854886330'),
-  Customer(name: 'Raju khan', code: 'Cust - 00002', phone: '01854886330'),
-  Customer(name: 'Karim Hasan', code: 'Cust - 00003', phone: '+8801734345'),
-  Customer(name: 'Hasan khan', code: 'Cust - 00004', phone: '+8801734345'),
-  Customer(name: 'Rahim Uddin', code: 'Cust - 00005', phone: '01711223344'),
-  Customer(name: 'Fatema Begum', code: 'Cust - 00006', phone: '01955667788'),
-];
+export '../models/customer.dart';
 
 // ─────────────────────────────────────────────────────────────
 // Screen
@@ -43,46 +22,113 @@ class SearchCustomerScreen extends StatefulWidget {
 class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  List<Customer> _results = _allCustomers;
+  final ScrollController _scrollController = ScrollController();
+  final CustomerService _customerService = CustomerService();
+
+  static const int _pageSize = 20;
+
+  Timer? _debounce;
+  List<Customer> _results = [];
+  int _currentPage = -1;
+  bool _hasMore = true;
+  bool _loading = false;
+  bool _loadingMore = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    // Auto-focus keyboard on open (mirrors the screenshot)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
+      _fetch(append: false);
     });
     _searchController.addListener(_onSearchChanged);
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_hasMore || _loadingMore || _loading) return;
+    final pos = _scrollController.position;
+    if (!pos.hasPixels || !pos.hasViewportDimension) return;
+    if (pos.pixels >= pos.maxScrollExtent - 240) {
+      _fetch(append: true);
+    }
   }
 
   void _onSearchChanged() {
-    final query = _searchController.text.trim().toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _results = _allCustomers;
-      } else {
-        _results = _allCustomers
-            .where(
-              (c) =>
-                  c.name.toLowerCase().contains(query) ||
-                  c.code.toLowerCase().contains(query) ||
-                  c.phone.contains(query),
-            )
-            .toList();
-      }
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      _fetch(append: false);
     });
   }
 
+  Future<void> _fetch({required bool append}) async {
+    if (_loadingMore && append) return;
+    if (_loading && !append) return;
+
+    final query = _searchController.text.trim();
+    final page = append ? _currentPage + 1 : 0;
+
+    setState(() {
+      _error = null;
+      if (!append) {
+        _loading = true;
+      } else {
+        _loadingMore = true;
+      }
+    });
+
+    try {
+      final result = await _customerService.fetchCustomers(
+        page: page,
+        size: _pageSize,
+        search: query,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (append) {
+          _results.addAll(result.customers);
+        } else {
+          _results = result.customers;
+        }
+        _currentPage = page;
+        if (append && result.customers.isEmpty) {
+          _hasMore = false;
+        } else {
+          _hasMore = !result.last;
+        }
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        _error = e is CustomerException ? e.message : e.toString();
+        if (!append) {
+          _results = [];
+          _currentPage = -1;
+          _hasMore = false;
+        }
+      });
+    }
+  }
+
   void _selectCustomer(Customer customer) {
-    // Pop and return the selected customer to the previous screen
     Navigator.of(context).pop(customer);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.removeListener(_onSearchChanged);
+    _scrollController.removeListener(_onScroll);
     _searchController.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
+    _customerService.close();
     super.dispose();
   }
 
@@ -94,7 +140,6 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Search Bar ────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               child: _SearchBar(
@@ -103,15 +148,12 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
                 onBack: () => Navigator.of(context).pop(),
               ),
             ),
-
             const SizedBox(height: 20),
-
-            // ── Section Label ─────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 _searchController.text.trim().isEmpty
-                    ? 'Recent Customers'
+                    ? 'Customers'
                     : 'Search Results',
                 style: const TextStyle(
                   fontSize: 15,
@@ -121,34 +163,58 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 8),
-
-            // ── Customer List ─────────────────────────────────
-            Expanded(
-              child: _results.isEmpty
-                  ? const _EmptyResult()
-                  : ListView.separated(
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: _results.length,
-                      separatorBuilder: (_, __) => const Divider(
-                        height: 1,
-                        indent: 72,
-                        endIndent: 0,
-                        color: Color(0xFFE5E5EA),
-                      ),
-                      itemBuilder: (context, index) {
-                        return _CustomerTile(
-                          customer: _results[index],
-                          query: _searchController.text.trim(),
-                          onTap: () => _selectCustomer(_results[index]),
-                        );
-                      },
-                    ),
-            ),
+            Expanded(child: _buildBody()),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading && _results.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    if (_error != null && _results.isEmpty) {
+      return _ErrorState(message: _error!, onRetry: () => _fetch(append: false));
+    }
+
+    if (_results.isEmpty) {
+      return const _EmptyResult();
+    }
+
+    return ListView.separated(
+      controller: _scrollController,
+      physics: const BouncingScrollPhysics(),
+      itemCount: _results.length + (_loadingMore ? 1 : 0),
+      separatorBuilder: (_, __) => const Divider(
+        height: 1,
+        indent: 72,
+        endIndent: 0,
+        color: Color(0xFFE5E5EA),
+      ),
+      itemBuilder: (context, index) {
+        if (index >= _results.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        return _CustomerTile(
+          customer: _results[index],
+          query: _searchController.text.trim(),
+          onTap: () => _selectCustomer(_results[index]),
+        );
+      },
     );
   }
 }
@@ -178,7 +244,6 @@ class _SearchBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Back arrow
           GestureDetector(
             onTap: onBack,
             behavior: HitTestBehavior.opaque,
@@ -191,8 +256,6 @@ class _SearchBar extends StatelessWidget {
               ),
             ),
           ),
-
-          // Text field
           Expanded(
             child: TextField(
               controller: controller,
@@ -200,15 +263,13 @@ class _SearchBar extends StatelessWidget {
               textAlignVertical: TextAlignVertical.center,
               style: const TextStyle(fontSize: 15, color: Color(0xFF1A1A2E)),
               decoration: const InputDecoration(
-                hintText: 'Search Member name, Phone,ID...',
+                hintText: 'Search Member name, Phone, ID...',
                 hintStyle: TextStyle(fontSize: 15, color: Color(0xFFAEAEB2)),
                 border: InputBorder.none,
                 isDense: true,
               ),
             ),
           ),
-
-          // Clear button (visible when text is present)
           ValueListenableBuilder<TextEditingValue>(
             valueListenable: controller,
             builder: (_, value, __) {
@@ -256,7 +317,6 @@ class _CustomerTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            // Avatar
             Container(
               width: 44,
               height: 44,
@@ -270,15 +330,11 @@ class _CustomerTile extends StatelessWidget {
                 size: 22,
               ),
             ),
-
             const SizedBox(width: 14),
-
-            // Name + code + phone
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Highlighted name
                   _HighlightText(
                     text: customer.name,
                     query: query,
@@ -294,10 +350,7 @@ class _CustomerTile extends StatelessWidget {
                       backgroundColor: Color(0xFFFFE566),
                     ),
                   ),
-
                   const SizedBox(height: 4),
-
-                  // Code + phone row
                   Row(
                     children: [
                       Text(
@@ -307,38 +360,38 @@ class _CustomerTile extends StatelessWidget {
                           color: Color(0xFF8E8E93),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      const Text(
-                        '-',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Color(0xFF8E8E93),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.phone_outlined,
-                        size: 12,
-                        color: Color(0xFF8E8E93),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          customer.phone,
-                          style: const TextStyle(
+                      if (customer.phone.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        const Text(
+                          '-',
+                          style: TextStyle(
                             fontSize: 12.5,
                             color: Color(0xFF8E8E93),
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        const Icon(
+                          Icons.phone_outlined,
+                          size: 12,
+                          color: Color(0xFF8E8E93),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            customer.phone,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Color(0xFF8E8E93),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
               ),
             ),
-
-            // Chevron
             const Icon(
               Icons.chevron_right_rounded,
               color: Color(0xFFD1D1D6),
@@ -351,9 +404,6 @@ class _CustomerTile extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Highlight matching text
-// ─────────────────────────────────────────────────────────────
 class _HighlightText extends StatelessWidget {
   final String text;
   final String query;
@@ -402,9 +452,6 @@ class _HighlightText extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Empty State
-// ─────────────────────────────────────────────────────────────
 class _EmptyResult extends StatelessWidget {
   const _EmptyResult();
 
@@ -439,26 +486,32 @@ class _EmptyResult extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Standalone entry point for previewing this screen alone
-// ─────────────────────────────────────────────────────────────
-void main() {
-  runApp(const _PreviewApp());
-}
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
 
-class _PreviewApp extends StatelessWidget {
-  const _PreviewApp();
+  final String message;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Search Customer',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A1A2E)),
-        useMaterial3: true,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.cloud_off_outlined, size: 48, color: Color(0xFFD1D1D6)),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
+            ),
+            const SizedBox(height: 16),
+            TextButton(onPressed: onRetry, child: const Text('Retry')),
+          ],
+        ),
       ),
-      home: const SearchCustomerScreen(),
     );
   }
 }
