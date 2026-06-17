@@ -37,6 +37,16 @@ class ApiConfig {
   static final Uri expressSavePrint =
       endpoint('/api/mobile/sales/pos/express/bills/save-print');
 
+  static final Uri posSettlementSubmit =
+      endpoint('/api/mobile/pos/settlement/submit');
+
+  static Uri posSettlementCurrent({required String terminalCode}) =>
+      endpoint('/api/mobile/pos/settlement/current')
+          .replace(queryParameters: {'terminalCode': terminalCode});
+
+  static Uri posSettlementById(int id) =>
+      endpoint('/api/mobile/pos/settlement/$id');
+
   /// GET `/api/mobile/accounts/stakeholders-customer?page=&size=&search=`
   static Uri stakeholdersCustomer({
     required int page,

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_session.dart';
+import '../services/pos_settlement_service.dart';
 import '../services/pos_sign_in_helper.dart';
 import '../services/pos_shift_service.dart';
+import '../settlement/settlement_preview_screen.dart';
 import 'login_screen.dart';
 import 'main.dart' show POSScreen;
 import 'settings_screen.dart';
@@ -65,7 +67,9 @@ class _ProfileSettingsContent extends StatefulWidget {
 
 class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
   bool _isSigningIn = false;
+  bool _isSettling = false;
   final PosShiftService _posShiftService = PosShiftService();
+  final PosSettlementService _settlementService = PosSettlementService();
 
   bool get _operationsEnabled => AuthSession.deviceShiftOperationsEnabled;
 
@@ -130,8 +134,9 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               _MenuTile(
                 icon: Icons.payments_outlined,
                 label: 'Settlement',
-                enabled: _operationsEnabled,
-                onTap: () => _onMenuTap(context, 'Settlement'),
+                enabled: _operationsEnabled && !_isSettling,
+                loading: _isSettling,
+                onTap: () => _onSettlementTap(context),
               ),
               _MenuTile(
                 icon: Icons.login_outlined,
@@ -395,6 +400,64 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     );
   }
 
+  Future<void> _onSettlementTap(BuildContext context) async {
+    if (_isSettling || !_operationsEnabled) return;
+    setState(() => _isSettling = true);
+
+    try {
+      // 1. Submit settlement
+      final submitResult = await _settlementService.submitSettlement();
+
+      // 2. Fetch the full slip for printing
+      final slip =
+          await _settlementService.getSettlementById(submitResult.settlementId);
+
+      if (!mounted) return;
+
+      // 3. Close the settings sheet, then show the slip screen
+      Navigator.of(context).pop();
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              SettlementPreviewScreen(slip: slip, autoPrint: true),
+        ),
+      );
+    } on PosSettlementException catch (e) {
+      if (!mounted) return;
+      _showSettlementError(context, e.message);
+    } catch (e) {
+      if (!mounted) return;
+      _showSettlementError(context, e.toString());
+    } finally {
+      if (mounted) setState(() => _isSettling = false);
+    }
+  }
+
+  static void _showSettlementError(BuildContext context, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline_rounded,
+                color: Colors.redAccent, size: 22),
+            SizedBox(width: 8),
+            Text('Settlement Failed',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onSignOff(BuildContext context) {
     AuthSession.clearPosSignIn();
     setState(() {});
@@ -419,6 +482,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
   @override
   void dispose() {
     _posShiftService.close();
+    _settlementService.close();
     super.dispose();
   }
 }
@@ -512,12 +576,14 @@ class _MenuTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.enabled = true,
+    this.loading = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final bool enabled;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -525,7 +591,7 @@ class _MenuTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: enabled ? onTap : null,
+        onTap: (enabled && !loading) ? onTap : null,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -543,11 +609,21 @@ class _MenuTile extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: enabled ? const Color(0xFFC7C7CC) : tileColor,
-                size: 22,
-              ),
+              if (loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF1A56DB),
+                  ),
+                )
+              else
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: enabled ? const Color(0xFFC7C7CC) : tileColor,
+                  size: 22,
+                ),
             ],
           ),
         ),
