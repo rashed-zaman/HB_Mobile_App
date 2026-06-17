@@ -5,6 +5,7 @@ import '../models/checkout_order.dart';
 import '../models/product.dart';
 import 'payment_screen.dart';          // ← new
 import 'quantity_bottom_sheet.dart';
+import '../services/pos_shift_status_watcher.dart';
 import 'profile_settings_sheet.dart';
 import 'search_customer.dart';
 import 'search_product.dart';
@@ -73,6 +74,29 @@ class _POSScreenState extends State<POSScreen> {
   final TextEditingController _searchController = TextEditingController();
   final List<CartItem> _cartItems = [];
   Customer? _selectedCustomer;
+  final PosShiftStatusWatcher _statusWatcher = PosShiftStatusWatcher.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _statusWatcher.addListener(_onShiftStatusChanged);
+    _statusWatcher.refresh();
+  }
+
+  void _onShiftStatusChanged() {
+    if (!mounted) return;
+    if (_statusWatcher.consumeSettlementAcceptedNotification()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Settlement accepted. You can now sign off.'),
+          backgroundColor: Color(0xFF15803D),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+    setState(() {});
+  }
 
   final List<Map<String, dynamic>> _products = [
     {'name': 'Rice (1kg)', 'price': 65.0, 'barcode': '8901234567890'},
@@ -265,6 +289,7 @@ class _POSScreenState extends State<POSScreen> {
 
   @override
   void dispose() {
+    _statusWatcher.removeListener(_onShiftStatusChanged);
     _nameController.dispose();
     _phoneController.dispose();
     _searchController.dispose();

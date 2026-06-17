@@ -281,4 +281,16 @@ class AuthSession {
   static void setShiftStatus(bool status) {
     posSignedIn = status;
   }
+
+  /// Keeps [deviceShift] settlement flags in sync with POS sign-in status API.
+  static void applyShiftStatusFlags({
+    required bool pendingSettlement,
+    required bool settlementAccepted,
+  }) {
+    if (deviceShift == null) return;
+    deviceShift = deviceShift!.copyWith(
+      pendingSettlement: pendingSettlement,
+      settlementAccepted: settlementAccepted,
+    );
+  }
 }

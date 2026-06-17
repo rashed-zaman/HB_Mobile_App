@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_session.dart';
 import '../services/pos_settlement_service.dart';
+import '../services/pos_shift_status_watcher.dart';
 import '../services/pos_sign_in_helper.dart';
 import '../services/pos_shift_service.dart';
 import '../settlement/settlement_preview_screen.dart';
@@ -70,11 +71,20 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
   bool _isSigningOff = false;
   bool _isSettling = false;
   bool _isLoadingShiftStatus = false;
-  PosShiftStatus? _shiftStatus;
+  final PosShiftStatusWatcher _statusWatcher = PosShiftStatusWatcher.instance;
   final PosShiftService _posShiftService = PosShiftService();
   final PosSettlementService _settlementService = PosSettlementService();
 
+  PosShiftStatus? get _shiftStatus => _statusWatcher.status;
+
   bool get _operationsEnabled => AuthSession.deviceShiftOperationsEnabled;
+
+  bool get _canSubmitSettlement {
+    if (!_operationsEnabled) return false;
+    final status = _shiftStatus;
+    if (status == null) return !_isLoadingShiftStatus;
+    return status.canSubmitSettlement;
+  }
 
   bool get _canSignOff {
     if (!_operationsEnabled || _isSigningOff) return false;
@@ -85,13 +95,37 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
 
   String? get _signOffHint => _shiftStatus?.signOffBlockedReason;
 
+  String? get _settlementHint {
+    final status = _shiftStatus;
+    if (status == null || !_operationsEnabled) return null;
+    if (status.pendingSettlement) {
+      return 'Settlement submitted. Waiting for manager approval.';
+    }
+    if (status.settlementAccepted && !status.canSubmitSettlement) {
+      return 'Settlement accepted. You can sign off when ready.';
+    }
+    if (status.settlementRequired && !status.canSubmitSettlement) {
+      return 'Settlement is not available right now.';
+    }
+    return null;
+  }
+
   static const Color _textDark = Color(0xFF1A1A2E);
   static const Color _textMuted = Color(0xFF8E8E93);
 
   @override
   void initState() {
     super.initState();
+    _statusWatcher.addListener(_onShiftStatusChanged);
     _refreshShiftStatus();
+  }
+
+  void _onShiftStatusChanged() {
+    if (!mounted) return;
+    if (_statusWatcher.consumeSettlementAcceptedNotification()) {
+      _notifySettlementAccepted();
+    }
+    setState(() {});
   }
 
   @override
@@ -152,10 +186,24 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               _MenuTile(
                 icon: Icons.payments_outlined,
                 label: 'Settlement',
-                enabled: _operationsEnabled && !_isSettling,
-                loading: _isSettling,
+                enabled: _canSubmitSettlement && !_isSettling,
+                loading: _isSettling || _isLoadingShiftStatus,
                 onTap: () => _onSettlementTap(context),
               ),
+              if (_operationsEnabled &&
+                  _settlementHint != null &&
+                  !_isLoadingShiftStatus)
+                Padding(
+                  padding: const EdgeInsets.only(left: 36, bottom: 4),
+                  child: Text(
+                    _settlementHint!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: _textMuted,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
               _MenuTile(
                 icon: Icons.login_outlined,
                 label: 'Sign in',
@@ -437,18 +485,25 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
   }
 
   Future<void> _onSettlementTap(BuildContext context) async {
-    if (_isSettling || !_operationsEnabled) return;
+    if (_isSettling || !_canSubmitSettlement) return;
     setState(() => _isSettling = true);
 
     try {
       // 1. Submit settlement
       final submitResult = await _settlementService.submitSettlement();
 
+      AuthSession.applyShiftStatusFlags(
+        pendingSettlement: submitResult.pendingSettlement,
+        settlementAccepted: false,
+      );
+
       // 2. Fetch the full slip for printing
       final slip =
           await _settlementService.getSettlementById(submitResult.settlementId);
 
       if (!mounted) return;
+
+      await _refreshShiftStatus();
 
       // 3. Close the settings sheet, then show the slip screen
       Navigator.of(context).pop();
@@ -458,6 +513,9 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               SettlementPreviewScreen(slip: slip, autoPrint: true),
         ),
       );
+
+      if (!mounted) return;
+      await _refreshShiftStatus();
     } on PosSettlementException catch (e) {
       if (!mounted) return;
       _showSettlementError(context, e.message);
@@ -495,26 +553,36 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     );
   }
 
-  Future<void> _refreshShiftStatus() async {
+  Future<void> _refreshShiftStatus({bool silent = false}) async {
     if (!_operationsEnabled) {
       if (!mounted) return;
-      setState(() => _shiftStatus = null);
+      setState(() {});
       return;
     }
 
-    final request = await resolvePosSignInRequest();
-    final terminalCode = request.terminalCode?.trim();
-    if (terminalCode == null || terminalCode.isEmpty) return;
-
-    if (mounted) setState(() => _isLoadingShiftStatus = true);
+    if (!silent && mounted) setState(() => _isLoadingShiftStatus = true);
     try {
-      final status =
-          await _posShiftService.getShiftStatus(terminalCode: terminalCode);
+      await _statusWatcher.refresh(notify: false);
       if (!mounted) return;
-      setState(() => _shiftStatus = status);
+      if (_statusWatcher.consumeSettlementAcceptedNotification()) {
+        _notifySettlementAccepted();
+      }
+      setState(() {});
     } finally {
-      if (mounted) setState(() => _isLoadingShiftStatus = false);
+      if (mounted && !silent) setState(() => _isLoadingShiftStatus = false);
     }
+  }
+
+  void _notifySettlementAccepted() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Settlement accepted. You can now sign off.'),
+        backgroundColor: Color(0xFF15803D),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 5),
+      ),
+    );
   }
 
   Future<bool> _confirmSignOff(BuildContext context, String terminalCode) async {
@@ -618,9 +686,8 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
       }
 
       if (!mounted) return;
-      setState(() {
-        _shiftStatus = null;
-      });
+      await _statusWatcher.refresh();
+      setState(() {});
 
       final data = result.data;
       final orderCount = data?['orderCount'];
@@ -662,6 +729,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
 
   @override
   void dispose() {
+    _statusWatcher.removeListener(_onShiftStatusChanged);
     _posShiftService.close();
     _settlementService.close();
     super.dispose();

@@ -21,6 +21,8 @@ class PosShiftStatus {
   const PosShiftStatus({
     required this.canSignOutWeb,
     this.pendingSettlement = false,
+    this.settlementAccepted = false,
+    this.canSubmitSettlement = false,
     this.settlementRequired = false,
     this.changeMoneyBlocksBilling = false,
     this.currentUserSignedIn = false,
@@ -29,6 +31,8 @@ class PosShiftStatus {
 
   final bool canSignOutWeb;
   final bool pendingSettlement;
+  final bool settlementAccepted;
+  final bool canSubmitSettlement;
   final bool settlementRequired;
   final bool changeMoneyBlocksBilling;
   final bool currentUserSignedIn;
@@ -41,6 +45,8 @@ class PosShiftStatus {
     return PosShiftStatus(
       canSignOutWeb: data['canSignOutWeb'] == true,
       pendingSettlement: data['pendingSettlement'] == true,
+      settlementAccepted: data['settlementAccepted'] == true,
+      canSubmitSettlement: data['canSubmitSettlement'] == true,
       settlementRequired: data['settlementRequired'] == true,
       changeMoneyBlocksBilling: data['changeMoneyBlocksBilling'] == true,
       currentUserSignedIn: data['currentUserSignedIn'] == true,
