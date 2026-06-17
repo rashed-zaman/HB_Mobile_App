@@ -17,6 +17,55 @@ class PosShiftException implements Exception {
   String toString() => message;
 }
 
+class PosShiftStatus {
+  const PosShiftStatus({
+    required this.canSignOutWeb,
+    this.pendingSettlement = false,
+    this.settlementRequired = false,
+    this.changeMoneyBlocksBilling = false,
+    this.currentUserSignedIn = false,
+    this.raw,
+  });
+
+  final bool canSignOutWeb;
+  final bool pendingSettlement;
+  final bool settlementRequired;
+  final bool changeMoneyBlocksBilling;
+  final bool currentUserSignedIn;
+  final Map<String, dynamic>? raw;
+
+  factory PosShiftStatus.fromApiData(Map<String, dynamic>? data) {
+    if (data == null) {
+      return const PosShiftStatus(canSignOutWeb: false);
+    }
+    return PosShiftStatus(
+      canSignOutWeb: data['canSignOutWeb'] == true,
+      pendingSettlement: data['pendingSettlement'] == true,
+      settlementRequired: data['settlementRequired'] == true,
+      changeMoneyBlocksBilling: data['changeMoneyBlocksBilling'] == true,
+      currentUserSignedIn: data['currentUserSignedIn'] == true,
+      raw: data,
+    );
+  }
+
+  String? get signOffBlockedReason {
+    if (canSignOutWeb) return null;
+    if (!currentUserSignedIn) {
+      return 'You are not signed in on this terminal.';
+    }
+    if (pendingSettlement) {
+      return 'Settlement is awaiting manager approval.';
+    }
+    if (settlementRequired) {
+      return 'Submit settlement before ending billing.';
+    }
+    if (changeMoneyBlocksBilling) {
+      return 'Accept change money before ending billing.';
+    }
+    return 'End billing is not available right now.';
+  }
+}
+
 class PosSignInDebugSnapshot {
   const PosSignInDebugSnapshot({
     required this.url,
@@ -38,7 +87,7 @@ class PosSignInDebugSnapshot {
 
   String format() {
     final buffer = StringBuffer()
-      ..writeln('─── POS SIGN IN REQUEST ───')
+      ..writeln('─── POS SHIFT REQUEST ───')
       ..writeln('$method $url')
       ..writeln('')
       ..writeln('Headers:')
@@ -50,7 +99,7 @@ class PosSignInDebugSnapshot {
     if (statusCode != null || responseBody != null) {
       buffer
         ..writeln('')
-        ..writeln('─── POS SIGN IN RESPONSE ───')
+        ..writeln('─── POS SHIFT RESPONSE ───')
         ..writeln('Status: ${statusCode ?? '—'}')
         ..writeln('')
         ..writeln('Body:');
@@ -91,12 +140,14 @@ class PosShiftSignInResult {
     this.message,
     this.raw,
     required this.debug,
+    this.data,
   });
 
   final bool status;
   final String? message;
   final Map<String, dynamic>? raw;
   final PosSignInDebugSnapshot debug;
+  final Map<String, dynamic>? data;
 }
 
 class PosShiftService {
@@ -109,23 +160,76 @@ class PosShiftService {
     required String terminalCode,
     required String deviceUuid,
   }) async {
-    final requestBody = <String, dynamic>{
-      'employeeId': employeeId,
-      'terminalCode': terminalCode,
-      'deviceUuid': deviceUuid,
-    };
-    final headers = <String, String>{
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-      'X-Device-Id': deviceUuid,
-    };
-    final auth = AuthSession.authorizationHeader;
-    if (auth != null) {
-      headers['Authorization'] = auth;
+    return _postShiftAction(
+      url: ApiConfig.posSignIn,
+      requestBody: {
+        'employeeId': employeeId,
+        'terminalCode': terminalCode,
+        'deviceUuid': deviceUuid,
+      },
+      terminalCode: terminalCode,
+      deviceUuid: deviceUuid,
+      failureMessage: 'Sign in failed. Please try again.',
+    );
+  }
+
+  Future<PosShiftSignInResult> signOut({
+    required int employeeId,
+    required String terminalCode,
+  }) async {
+    return _postShiftAction(
+      url: ApiConfig.posSignOut,
+      requestBody: {
+        'employeeId': employeeId,
+        'terminalCode': terminalCode,
+      },
+      terminalCode: terminalCode,
+      failureMessage: 'Sign off failed. Please try again.',
+    );
+  }
+
+  Future<PosShiftStatus?> getShiftStatus({required String terminalCode}) async {
+    final headers = _buildHeaders(terminalCode: terminalCode);
+    final url = ApiConfig.posSignInStatus(terminalCode: terminalCode);
+
+    try {
+      final response = await _client
+          .get(url, headers: headers)
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+
+      final decoded = _decodeObject(response.body);
+      if (decoded['status'] != true) return null;
+
+      final data = decoded['data'];
+      if (data is! Map<String, dynamic>) return null;
+      return PosShiftStatus.fromApiData(data);
+    } on TimeoutException {
+      return null;
+    } on http.ClientException {
+      return null;
+    } on FormatException {
+      return null;
     }
+  }
+
+  Future<PosShiftSignInResult> _postShiftAction({
+    required Uri url,
+    required Map<String, dynamic> requestBody,
+    required String terminalCode,
+    String? deviceUuid,
+    required String failureMessage,
+  }) async {
+    final headers = _buildHeaders(
+      terminalCode: terminalCode,
+      deviceUuid: deviceUuid,
+    );
 
     PosSignInDebugSnapshot debugSnapshot = PosSignInDebugSnapshot(
-      url: ApiConfig.posSignIn,
+      url: url,
       method: 'POST',
       headers: headers,
       body: requestBody,
@@ -135,15 +239,11 @@ class PosShiftService {
 
     try {
       final response = await _client
-          .post(
-            ApiConfig.posSignIn,
-            headers: headers,
-            body: jsonEncode(requestBody),
-          )
+          .post(url, headers: headers, body: jsonEncode(requestBody))
           .timeout(const Duration(seconds: 30));
 
       debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+        url: url,
         method: 'POST',
         headers: headers,
         body: requestBody,
@@ -155,22 +255,24 @@ class PosShiftService {
       final decoded = _decodeObject(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw PosShiftException(
-          _readErrorMessage(decoded) ?? 'Sign in failed. Please try again.',
+          _readErrorMessage(decoded) ?? failureMessage,
           debug: debugSnapshot,
         );
       }
 
       final status = decoded['status'] == true;
       final message = decoded['message']?.toString();
+      final data = decoded['data'];
       return PosShiftSignInResult(
         status: status,
         message: message,
         raw: decoded,
+        data: data is Map<String, dynamic> ? data : null,
         debug: debugSnapshot,
       );
     } on TimeoutException {
       debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+        url: url,
         method: 'POST',
         headers: headers,
         body: requestBody,
@@ -183,7 +285,7 @@ class PosShiftService {
       );
     } on http.ClientException catch (error) {
       debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+        url: url,
         method: 'POST',
         headers: headers,
         body: requestBody,
@@ -196,7 +298,7 @@ class PosShiftService {
       );
     } on FormatException catch (error) {
       debugSnapshot = PosSignInDebugSnapshot(
-        url: ApiConfig.posSignIn,
+        url: url,
         method: 'POST',
         headers: headers,
         body: requestBody,
@@ -212,11 +314,31 @@ class PosShiftService {
     }
   }
 
+  Map<String, String> _buildHeaders({
+    required String terminalCode,
+    String? deviceUuid,
+  }) {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'X-Pos-Terminal-Code': terminalCode,
+    };
+    final auth = AuthSession.authorizationHeader;
+    if (auth != null) {
+      headers['Authorization'] = auth;
+    }
+    final uuid = deviceUuid?.trim();
+    if (uuid != null && uuid.isNotEmpty) {
+      headers['X-Device-Id'] = uuid;
+    }
+    return headers;
+  }
+
   static void _debugLog(String message) {
     if (!kDebugMode) return;
-    debugPrint('──────── POS SIGN IN API ────────');
+    debugPrint('──────── POS SHIFT API ────────');
     debugPrint(message);
-    debugPrint('──────────────────────────────────');
+    debugPrint('────────────────────────────────');
   }
 
   Map<String, dynamic> _decodeObject(String body) {

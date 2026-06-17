@@ -67,14 +67,32 @@ class _ProfileSettingsContent extends StatefulWidget {
 
 class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
   bool _isSigningIn = false;
+  bool _isSigningOff = false;
   bool _isSettling = false;
+  bool _isLoadingShiftStatus = false;
+  PosShiftStatus? _shiftStatus;
   final PosShiftService _posShiftService = PosShiftService();
   final PosSettlementService _settlementService = PosSettlementService();
 
   bool get _operationsEnabled => AuthSession.deviceShiftOperationsEnabled;
 
+  bool get _canSignOff {
+    if (!_operationsEnabled || _isSigningOff) return false;
+    final status = _shiftStatus;
+    if (status == null) return true;
+    return status.canSignOutWeb;
+  }
+
+  String? get _signOffHint => _shiftStatus?.signOffBlockedReason;
+
   static const Color _textDark = Color(0xFF1A1A2E);
   static const Color _textMuted = Color(0xFF8E8E93);
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshShiftStatus();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -147,9 +165,25 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
               _MenuTile(
                 icon: Icons.logout_outlined,
                 label: 'Sign off',
-                enabled: _operationsEnabled,
-                onTap: () => _onSignOff(context),
+                enabled: _canSignOff,
+                loading: _isSigningOff || _isLoadingShiftStatus,
+                onTap: () => _performSignOff(context),
               ),
+              if (_operationsEnabled &&
+                  _signOffHint != null &&
+                  !_canSignOff &&
+                  !_isLoadingShiftStatus)
+                Padding(
+                  padding: const EdgeInsets.only(left: 36, bottom: 4),
+                  child: Text(
+                    _signOffHint!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: _textMuted,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 16),
               const _SectionLabel('System'),
               _MenuTile(
@@ -348,6 +382,8 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
 
       if (!mounted) return;
       setState(() {});
+      await _refreshShiftStatus();
+      if (!mounted) return;
       _showSnack(context, 'Sign in successful.');
 
       _navigateToPosScreen(context);
@@ -430,6 +466,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
       _showSettlementError(context, e.toString());
     } finally {
       if (mounted) setState(() => _isSettling = false);
+      if (mounted) await _refreshShiftStatus();
     }
   }
 
@@ -458,10 +495,154 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     );
   }
 
-  void _onSignOff(BuildContext context) {
-    AuthSession.clearPosSignIn();
-    setState(() {});
-    _showSnack(context, 'Signed off.');
+  Future<void> _refreshShiftStatus() async {
+    if (!_operationsEnabled) {
+      if (!mounted) return;
+      setState(() => _shiftStatus = null);
+      return;
+    }
+
+    final request = await resolvePosSignInRequest();
+    final terminalCode = request.terminalCode?.trim();
+    if (terminalCode == null || terminalCode.isEmpty) return;
+
+    if (mounted) setState(() => _isLoadingShiftStatus = true);
+    try {
+      final status =
+          await _posShiftService.getShiftStatus(terminalCode: terminalCode);
+      if (!mounted) return;
+      setState(() => _shiftStatus = status);
+    } finally {
+      if (mounted) setState(() => _isLoadingShiftStatus = false);
+    }
+  }
+
+  Future<bool> _confirmSignOff(BuildContext context, String terminalCode) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'End billing',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        content: Text('End billing on $terminalCode?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'End billing',
+              style: TextStyle(
+                color: Color(0xFFE65100),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  static void _showSignOffError(BuildContext context, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline_rounded,
+                color: Colors.redAccent, size: 22),
+            SizedBox(width: 8),
+            Text('Sign off failed',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performSignOff(BuildContext context) async {
+    if (_isSigningOff || !_operationsEnabled) return;
+
+    final request = await resolvePosSignInRequest();
+    if (!request.isValid) {
+      if (!mounted) return;
+      _showSignOffError(
+        context,
+        request.validationError ?? 'Sign off validation failed.',
+      );
+      return;
+    }
+
+    final terminalCode = request.terminalCode!.trim();
+    if (!await _confirmSignOff(context, terminalCode)) return;
+
+    setState(() => _isSigningOff = true);
+    try {
+      final result = await _posShiftService.signOut(
+        employeeId: request.employeeId!,
+        terminalCode: terminalCode,
+      );
+
+      if (mounted) {
+        await _showPosSignInDebugDialog(result.debug);
+      }
+
+      if (!result.status) {
+        if (!mounted) return;
+        _showSignOffError(
+          context,
+          result.message?.trim().isNotEmpty == true
+              ? result.message!.trim()
+              : 'Sign off failed. Please try again.',
+        );
+        return;
+      }
+
+      if (result.raw != null) {
+        AuthSession.applyPosSignOutPayload(result.raw!);
+      } else {
+        AuthSession.clearPosSignIn();
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _shiftStatus = null;
+      });
+
+      final data = result.data;
+      final orderCount = data?['orderCount'];
+      final totalAmount = data?['totalAmount'];
+      final countLabel = orderCount != null ? '$orderCount' : '0';
+      final amountLabel = totalAmount?.toString() ?? '0';
+      _showSnack(
+        context,
+        'Billing ended. Final today: $countLabel order(s), $amountLabel.',
+      );
+    } on PosShiftException catch (error) {
+      if (!mounted) return;
+
+      if (error.debug != null) {
+        await _showPosSignInDebugDialog(error.debug!);
+      }
+
+      _showSignOffError(context, error.message);
+      await _refreshShiftStatus();
+    } finally {
+      if (mounted) setState(() => _isSigningOff = false);
+    }
   }
 
   static void _logout(BuildContext context) {

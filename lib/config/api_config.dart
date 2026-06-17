@@ -31,6 +31,14 @@ class ApiConfig {
 
   static final Uri login = endpoint('/api/mobile/auth/login');
   static final Uri posSignIn = endpoint('/api/mobile/pos/signin');
+  static final Uri posSignOut = endpoint('/api/mobile/pos/signin/signout');
+
+  static Uri posSignInStatus({String? terminalCode}) =>
+      endpoint('/api/mobile/pos/signin/status').replace(
+        queryParameters: terminalCode != null && terminalCode.isNotEmpty
+            ? {'terminalCode': terminalCode}
+            : null,
+      );
   static final Uri deviceBind = endpoint('/api/mobile/pos/devices/bind');
   static final Uri deviceUnbind = endpoint('/api/mobile/pos/devices/unbind');
 

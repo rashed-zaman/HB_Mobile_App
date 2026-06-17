@@ -229,8 +229,17 @@ class AuthSession {
       deviceShift = deviceShift!.copyWith(
         active: false,
         shiftOpen: false,
+        pendingSettlement: false,
+        settlementAccepted: false,
       );
     }
+  }
+
+  /// Applies `POST /api/mobile/pos/signin/signout` response and clears local shift.
+  static void applyPosSignOutPayload(Map<String, dynamic> json) {
+    loginShiftSnapshot ??= <String, dynamic>{};
+    loginShiftSnapshot!['signOutData'] = json['data'];
+    clearPosSignIn();
   }
 
   static void clear() {
