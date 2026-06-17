@@ -505,9 +505,9 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
 
       await _refreshShiftStatus();
 
-      // 3. Close the settings sheet, then show the slip screen
-      Navigator.of(context).pop();
-      await Navigator.of(context).push(
+      // Show slip preview full-screen; keep the sheet underneath so closing
+      // preview returns here instead of a blank route.
+      await Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute<void>(
           builder: (_) =>
               SettlementPreviewScreen(slip: slip, autoPrint: true),
