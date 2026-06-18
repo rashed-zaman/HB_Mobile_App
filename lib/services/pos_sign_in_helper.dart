@@ -63,6 +63,33 @@ class PosSignInRequest {
   }
 }
 
+/// Resolves `X-Pos-Terminal-Code` from the active shift, bound device, or login.
+Future<String?> resolvePosTerminalCode() async {
+  final fromShift = AuthSession.deviceShift?.terminalCode?.trim();
+  if (fromShift != null && fromShift.isNotEmpty) return fromShift;
+
+  final bound = await getBoundDeviceData();
+  final fromBound = bound?.terminalCode.trim();
+  if (fromBound != null && fromBound.isNotEmpty) return fromBound;
+
+  final fromSession = AuthSession.terminalCode?.trim();
+  if (fromSession != null && fromSession.isNotEmpty) return fromSession;
+
+  final signIn = AuthSession.posSignInPayload;
+  final fromSignIn = signIn?['data'];
+  if (fromSignIn is Map<String, dynamic>) {
+    final code = fromSignIn['terminalCode']?.toString().trim();
+    if (code != null && code.isNotEmpty) return code;
+  }
+
+  final login = await getStoredLoginPayload();
+  if (login != null) {
+    return _terminalCodeFromLoginPayload(login);
+  }
+
+  return null;
+}
+
 Future<PosSignInRequest> resolvePosSignInRequest() async {
   final bound = await getBoundDeviceData();
   final login = await getStoredLoginPayload();
@@ -77,16 +104,7 @@ Future<PosSignInRequest> resolvePosSignInRequest() async {
     }
   }
 
-  String? terminalCode = AuthSession.terminalCode?.trim();
-  if (terminalCode == null || terminalCode.isEmpty) {
-    final fromBound = bound?.terminalCode.trim();
-    if (fromBound != null && fromBound.isNotEmpty) {
-      terminalCode = fromBound;
-    }
-  }
-  if ((terminalCode == null || terminalCode.isEmpty) && login != null) {
-    terminalCode = _terminalCodeFromLoginPayload(login);
-  }
+  final terminalCode = await resolvePosTerminalCode();
 
   String? deviceUuid = AuthSession.deviceUuid?.trim();
   if (deviceUuid == null || deviceUuid.isEmpty) {

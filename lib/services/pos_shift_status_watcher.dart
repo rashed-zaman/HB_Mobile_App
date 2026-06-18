@@ -31,6 +31,23 @@ class PosShiftStatusWatcher extends ChangeNotifier {
     return true;
   }
 
+  /// Applies a shift-status snapshot (e.g. from settlement submit) and starts
+  /// polling when a settlement is pending manager approval.
+  void applyStatus(PosShiftStatus status) {
+    final wasPending = _status?.pendingSettlement == true;
+    _status = status;
+    AuthSession.applyShiftStatusFlags(
+      pendingSettlement: status.pendingSettlement,
+      settlementAccepted: status.settlementAccepted,
+    );
+    final nowPending = status.pendingSettlement;
+    if (wasPending && !nowPending && status.settlementAccepted) {
+      _pendingAcceptanceNotification = true;
+    }
+    _managePolling(nowPending);
+    notifyListeners();
+  }
+
   /// Refreshes shift status once. Returns `true` when settlement was just accepted.
   Future<bool> refresh({bool notify = true}) async {
     if (!AuthSession.deviceShiftOperationsEnabled) {

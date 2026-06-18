@@ -8,7 +8,8 @@ import '../config/api_config.dart';
 import '../models/pos_settlement_dto.dart';
 import 'auth_session.dart';
 import 'bound_device_store.dart';
-import 'express_billing_service.dart' show resolvePosTerminalCode;
+import 'pos_sign_in_helper.dart' show resolvePosTerminalCode;
+import 'pos_shift_service.dart' show PosShiftStatus;
 
 class PosSettlementException implements Exception {
   const PosSettlementException(this.message);
@@ -26,10 +27,12 @@ class PosSettlementSubmitResult {
   const PosSettlementSubmitResult({
     required this.settlementId,
     required this.pendingSettlement,
+    this.shiftStatus,
   });
 
   final int settlementId;
   final bool pendingSettlement;
+  final PosShiftStatus? shiftStatus;
 }
 
 class PosSettlementService {
@@ -85,6 +88,7 @@ class PosSettlementService {
       return PosSettlementSubmitResult(
         settlementId: rawId.toInt(),
         pendingSettlement: data?['pendingSettlement'] as bool? ?? true,
+        shiftStatus: data != null ? PosShiftStatus.fromApiData(data) : null,
       );
     } on TimeoutException {
       throw const PosSettlementException(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async' show unawaited;
 
 import '../services/auth_session.dart';
 import '../services/pos_settlement_service.dart';
@@ -12,6 +13,8 @@ import 'settings_screen.dart';
 
 /// Opens the Profile & Settings panel (modal sheet) from the POS burger menu.
 Future<void> showProfileSettingsSheet(BuildContext context) {
+  // Refresh shift flags so Sign off reflects manager acceptance.
+  unawaited(PosShiftStatusWatcher.instance.refresh());
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -90,7 +93,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     if (!_operationsEnabled || _isSigningOff) return false;
     final status = _shiftStatus;
     if (status == null) return true;
-    return status.canSignOutWeb;
+    return status.canEndBilling;
   }
 
   String? get _signOffHint => _shiftStatus?.signOffBlockedReason;
@@ -492,10 +495,14 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
       // 1. Submit settlement
       final submitResult = await _settlementService.submitSettlement();
 
-      AuthSession.applyShiftStatusFlags(
-        pendingSettlement: submitResult.pendingSettlement,
-        settlementAccepted: false,
-      );
+      if (submitResult.shiftStatus != null) {
+        _statusWatcher.applyStatus(submitResult.shiftStatus!);
+      } else {
+        AuthSession.applyShiftStatusFlags(
+          pendingSettlement: submitResult.pendingSettlement,
+          settlementAccepted: false,
+        );
+      }
 
       // 2. Fetch the full slip for printing
       final slip =

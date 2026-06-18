@@ -55,12 +55,15 @@ class PosShiftStatus {
   }
 
   String? get signOffBlockedReason {
-    if (canSignOutWeb) return null;
+    if (canEndBilling) return null;
     if (!currentUserSignedIn) {
       return 'You are not signed in on this terminal.';
     }
     if (pendingSettlement) {
       return 'Settlement is awaiting manager approval.';
+    }
+    if (settlementAccepted && !canSubmitSettlement) {
+      return 'Settlement accepted. You can sign off when ready.';
     }
     if (settlementRequired) {
       return 'Submit settlement before ending billing.';
@@ -69,6 +72,12 @@ class PosShiftStatus {
       return 'Accept change money before ending billing.';
     }
     return 'End billing is not available right now.';
+  }
+
+  /// True when the cashier may end billing (sign off) per shift status API.
+  bool get canEndBilling {
+    if (canSignOutWeb) return true;
+    return settlementAccepted && !pendingSettlement && !canSubmitSettlement;
   }
 }
 

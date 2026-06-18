@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'auth_session.dart';
 import 'bound_device_store.dart';
+export 'pos_sign_in_helper.dart' show resolvePosTerminalCode;
 
 class ExpressBillingException implements Exception {
   const ExpressBillingException(this.message);
@@ -103,26 +104,4 @@ class ExpressBillingService {
     final message = body['message'] ?? body['error'] ?? body['detail'];
     return message?.toString().trim();
   }
-}
-
-/// Resolves `X-Pos-Terminal-Code` from shift, bound device, or login payload.
-Future<String?> resolvePosTerminalCode() async {
-  final fromShift = AuthSession.deviceShift?.terminalCode?.trim();
-  if (fromShift != null && fromShift.isNotEmpty) return fromShift;
-
-  final bound = await getBoundDeviceData();
-  final fromBound = bound?.terminalCode.trim();
-  if (fromBound != null && fromBound.isNotEmpty) return fromBound;
-
-  final fromSession = AuthSession.terminalCode?.trim();
-  if (fromSession != null && fromSession.isNotEmpty) return fromSession;
-
-  final signIn = AuthSession.posSignInPayload;
-  final fromSignIn = signIn?['data'];
-  if (fromSignIn is Map<String, dynamic>) {
-    final code = fromSignIn['terminalCode']?.toString().trim();
-    if (code != null && code.isNotEmpty) return code;
-  }
-
-  return null;
 }
