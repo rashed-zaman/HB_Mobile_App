@@ -48,6 +48,53 @@ double? parseMoneyInput(String raw) {
   return double.tryParse(s);
 }
 
+/// Flat discount limits by total bill (BDT).
+class FlatDiscountSlab {
+  const FlatDiscountSlab._({
+    required this.min,
+    required this.max,
+    required this.hint,
+  });
+
+  final double min;
+  final double max;
+  final String hint;
+
+  bool get allowsDiscount => max > 0;
+
+  static FlatDiscountSlab forTotalBill(double totalBill) {
+    if (totalBill <= 1000) {
+      return const FlatDiscountSlab._(
+        min: 0,
+        max: 0,
+        hint: 'Bills up to ৳1,000: flat discount must be ৳0',
+      );
+    }
+    if (totalBill <= 5000) {
+      return const FlatDiscountSlab._(
+        min: 0,
+        max: 10,
+        hint: '৳1,001–৳5,000: flat discount ৳0–৳10',
+      );
+    }
+    return const FlatDiscountSlab._(
+      min: 0,
+      max: 100,
+      hint: '৳5,001+: flat discount ৳0–৳100',
+    );
+  }
+
+  bool isValid(double amount) => amount >= min && amount <= max;
+
+  String? validationMessage(double amount) {
+    if (isValid(amount)) return null;
+    if (amount < min) {
+      return 'Minimum flat discount is ৳${formatAmount(min)}';
+    }
+    return 'Maximum flat discount is ৳${formatAmount(max)}';
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Data model for a confirmed payment entry
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,7 +194,7 @@ class PaymentScreen extends StatefulWidget {
   final double totalBill;
   final List<CheckoutLineItem> lineItems;
   final CheckoutCustomerInfo customer;
-  final VoidCallback onPrintReceipt;
+  final VoidCallback onOrderSubmitted;
 
   const PaymentScreen({
     super.key,
@@ -156,7 +203,7 @@ class PaymentScreen extends StatefulWidget {
     required this.totalBill,
     required this.lineItems,
     required this.customer,
-    required this.onPrintReceipt,
+    required this.onOrderSubmitted,
   });
 
   @override
@@ -338,18 +385,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final bill = PosBillResponse.fromJson(result);
       final printContext = await ReceiptPrintContext.fromBill(bill);
 
+      widget.onOrderSubmitted();
+
+      if (!mounted) return;
+
       await Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => InvoicePreviewScreen(
             bill: bill,
             printContext: printContext,
             autoPrint: true,
+            allowNewBill: true,
           ),
         ),
       );
-
-      if (!mounted) return;
-      widget.onPrintReceipt();
     } on ExpressBillingException catch (error) {
       if (!mounted) return;
       _showSnack(error.message, isError: true);
@@ -362,11 +411,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   // ── Show Add Discount bottom sheet ────────────────────────────────────────
   Future<void> _showDiscountSheet() async {
+    final slab = FlatDiscountSlab.forTotalBill(widget.totalBill);
+    if (!slab.allowsDiscount) {
+      _showSnack(slab.hint, isError: true);
+      return;
+    }
+
     final result = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _DiscountSheet(totalBill: widget.totalBill),
+      builder: (_) => _DiscountSheet(
+        totalBill: widget.totalBill,
+        initialDiscount: _discountTotal,
+      ),
     );
     if (result != null && mounted) {
       setState(() => _discountTotal = result);
@@ -475,7 +533,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
 
                   // ── Add discount ────────────────────────────────────────
-                  _DiscountButton(onTap: _showDiscountSheet),
+                  _DiscountButton(
+                    totalBill: widget.totalBill,
+                    appliedDiscount: _discountTotal,
+                    onTap: _showDiscountSheet,
+                  ),
 
                   // ── Net payable ─────────────────────────────────────────
                   _AmountRow(
@@ -583,28 +645,39 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
 class _DiscountSheet extends StatefulWidget {
   final double totalBill;
-  const _DiscountSheet({required this.totalBill});
+  final double initialDiscount;
+
+  const _DiscountSheet({
+    required this.totalBill,
+    this.initialDiscount = 0,
+  });
 
   @override
   State<_DiscountSheet> createState() => _DiscountSheetState();
 }
 
 class _DiscountSheetState extends State<_DiscountSheet> {
-  bool _isPercentage = true;
   final _ctrl = TextEditingController();
   double _parsedValue = 0;
 
-  double get _discountAmount {
-    if (_isPercentage) {
-      return (widget.totalBill * _parsedValue / 100).clamp(
-        0.0,
-        widget.totalBill,
+  FlatDiscountSlab get _slab => FlatDiscountSlab.forTotalBill(widget.totalBill);
+
+  bool get _canApply =>
+      _parsedValue > 0 && _slab.isValid(_parsedValue);
+
+  String? get _validationError => _slab.validationMessage(_parsedValue);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialDiscount > 0) {
+      _parsedValue = widget.initialDiscount;
+      _ctrl.text = formatAmount(
+        widget.initialDiscount,
+        keepTwoDecimals: true,
       );
     }
-    return _parsedValue.clamp(0.0, widget.totalBill);
   }
-
-  bool get _canApply => _parsedValue > 0;
 
   @override
   void dispose() {
@@ -631,7 +704,7 @@ class _DiscountSheetState extends State<_DiscountSheet> {
               children: [
                 const Expanded(
                   child: Text(
-                    'Add discount',
+                    'Flat discount',
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -648,33 +721,21 @@ class _DiscountSheetState extends State<_DiscountSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
-                children: [
-                  _ToggleTab(
-                    label: 'Percentage',
-                    selected: _isPercentage,
-                    onTap: () => setState(() {
-                      _isPercentage = true;
-                      _ctrl.clear();
-                      _parsedValue = 0;
-                    }),
-                  ),
-                  _ToggleTab(
-                    label: 'Amount',
-                    selected: !_isPercentage,
-                    onTap: () => setState(() {
-                      _isPercentage = false;
-                      _ctrl.clear();
-                      _parsedValue = 0;
-                    }),
-                  ),
-                ],
+              child: Text(
+                _slab.hint,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  height: 1.35,
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -700,10 +761,10 @@ class _DiscountSheetState extends State<_DiscountSheet> {
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF0D1117),
                 ),
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   border: InputBorder.none,
-                  hintText: _isPercentage ? '% 0.00' : 'BDT 0.00',
-                  hintStyle: const TextStyle(
+                  hintText: 'BDT 0.00',
+                  hintStyle: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w400,
                     color: Color(0xFFADB5BD),
@@ -714,12 +775,16 @@ class _DiscountSheetState extends State<_DiscountSheet> {
                 },
               ),
             ),
-            if (_isPercentage && _canApply) ...[
+            if (_validationError != null && _parsedValue > 0) ...[
               const SizedBox(height: 8),
               Text(
-                'Discount: ৳ ${formatAmount(_discountAmount, keepTwoDecimals: true)}',
+                _validationError!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
             const SizedBox(height: 16),
@@ -727,7 +792,7 @@ class _DiscountSheetState extends State<_DiscountSheet> {
               height: 52,
               child: ElevatedButton(
                 onPressed: _canApply
-                    ? () => Navigator.pop(context, _discountAmount)
+                    ? () => Navigator.pop(context, _parsedValue)
                     : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0D1117),
@@ -748,56 +813,6 @@ class _DiscountSheetState extends State<_DiscountSheet> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ToggleTab extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _ToggleTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          margin: const EdgeInsets.all(4),
-          height: 40,
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : [],
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected
-                  ? const Color(0xFF0D1117)
-                  : const Color(0xFF6B7280),
-            ),
-          ),
         ),
       ),
     );
@@ -1947,24 +1962,46 @@ class _AmountRow extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DiscountButton extends StatelessWidget {
+  final double totalBill;
+  final double appliedDiscount;
   final VoidCallback onTap;
-  const _DiscountButton({required this.onTap});
+
+  const _DiscountButton({
+    required this.totalBill,
+    required this.appliedDiscount,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final slab = FlatDiscountSlab.forTotalBill(totalBill);
+    final enabled = slab.allowsDiscount;
+
+    final label = appliedDiscount > 0
+        ? 'Flat discount: ৳${formatAmount(appliedDiscount, keepTwoDecimals: true)}'
+        : 'Add flat discount';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       child: OutlinedButton.icon(
-        onPressed: onTap,
+        onPressed: enabled ? onTap : null,
         icon: const Icon(Icons.local_activity_outlined, size: 20),
-        label: const Text(
-          'Add discount',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
         style: OutlinedButton.styleFrom(
           minimumSize: const Size.fromHeight(50),
-          foregroundColor: const Color(0xFF121317),
-          side: const BorderSide(color: Color(0xFF41434A), width: 1.2),
+          foregroundColor: enabled
+              ? const Color(0xFF121317)
+              : const Color(0xFFADB5BD),
+          disabledForegroundColor: const Color(0xFFADB5BD),
+          side: BorderSide(
+            color: enabled
+                ? const Color(0xFF41434A)
+                : const Color(0xFFE5E7EB),
+            width: 1.2,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),

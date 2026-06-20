@@ -244,7 +244,7 @@ class _POSScreenState extends State<POSScreen> {
               _selectedCustomer = null;
             });
           },
-          destinationBuilder: (onPrint) => PaymentScreen(
+          destinationBuilder: (onOrderSubmitted) => PaymentScreen(
             invoiceNumber: invoice,
             itemCount: totalItems,
             totalBill: total,
@@ -259,7 +259,7 @@ class _POSScreenState extends State<POSScreen> {
                   ? walkInPhone
                   : selectedCustomer?.phone,
             ),
-            onPrintReceipt: onPrint,
+            onOrderSubmitted: onOrderSubmitted,
           ),
         ),
       ),
@@ -1027,10 +1027,7 @@ class _CheckoutLoadingScreenState extends State<_CheckoutLoadingScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => widget.destinationBuilder(() {
-            widget.onComplete();
-            Navigator.of(context).pop();
-          }),
+          builder: (_) => widget.destinationBuilder(widget.onComplete),
         ),
       );
     });
