@@ -7,9 +7,13 @@ import '../services/pos_shift_status_watcher.dart';
 import '../services/pos_sign_in_helper.dart';
 import '../services/pos_shift_service.dart';
 import '../settlement/settlement_preview_screen.dart';
+import 'bill_search_screen.dart';
 import 'login_screen.dart';
 import 'main.dart' show POSScreen;
 import 'settings_screen.dart';
+import 'sign_in_preview_screen.dart';
+import 'sign_off_preview_screen.dart';
+import '../models/pos_signin_dto.dart';
 
 /// Opens the Profile & Settings panel (modal sheet) from the POS burger menu.
 Future<void> showProfileSettingsSheet(BuildContext context) {
@@ -182,7 +186,7 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
                 icon: Icons.manage_search_outlined,
                 label: 'Bill search',
                 enabled: _operationsEnabled,
-                onTap: () => _onMenuTap(context, 'Bill search'),
+                onTap: () => _openBillSearch(context),
               ),
               const SizedBox(height: 16),
               const _SectionLabel('Cash control'),
@@ -434,9 +438,24 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
       if (!mounted) return;
       setState(() {});
       await _refreshShiftStatus();
-      if (!mounted) return;
-      _showSnack(context, 'Sign in successful.');
 
+      if (!mounted) return;
+
+      if (result.data != null) {
+        final signIn = PosSignInDto.fromJson(result.data!);
+        await Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SignInPreviewScreen(
+              signIn: signIn,
+              autoPrint: true,
+            ),
+          ),
+        );
+      } else {
+        _showSnack(context, 'Sign in successful.');
+      }
+
+      if (!mounted) return;
       _navigateToPosScreen(context);
     } on PosShiftException catch (error) {
       if (!mounted) return;
@@ -467,6 +486,15 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     _navigateToPosScreen(context);
   }
 
+  Future<void> _openBillSearch(BuildContext context) async {
+    if (!_operationsEnabled) return;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const BillSearchScreen(),
+      ),
+    );
+  }
+
   void _navigateToPosScreen(BuildContext context) {
     final navigator = Navigator.of(context);
     if (navigator.canPop()) {
@@ -475,15 +503,6 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
     navigator.pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const POSScreen()),
       (route) => false,
-    );
-  }
-
-  static void _onMenuTap(BuildContext context, String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label — coming soon'),
-        behavior: SnackBarBehavior.floating,
-      ),
     );
   }
 
@@ -696,15 +715,22 @@ class _ProfileSettingsContentState extends State<_ProfileSettingsContent> {
       await _statusWatcher.refresh();
       setState(() {});
 
-      final data = result.data;
-      final orderCount = data?['orderCount'];
-      final totalAmount = data?['totalAmount'];
-      final countLabel = orderCount != null ? '$orderCount' : '0';
-      final amountLabel = totalAmount?.toString() ?? '0';
-      _showSnack(
-        context,
-        'Billing ended. Final today: $countLabel order(s), $amountLabel.',
-      );
+      if (result.data != null) {
+        final signOff = PosSignInDto.fromJson(result.data!);
+        await Navigator.of(context, rootNavigator: true).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SignOffPreviewScreen(
+              signOff: signOff,
+              autoPrint: true,
+            ),
+          ),
+        );
+      } else {
+        _showSnack(context, 'Billing ended successfully.');
+      }
+
+      if (!mounted) return;
+      setState(() {});
     } on PosShiftException catch (error) {
       if (!mounted) return;
 

@@ -45,6 +45,9 @@ class ApiConfig {
   static final Uri expressSavePrint =
       endpoint('/api/mobile/sales/pos/express/bills/save-print');
 
+  static final Uri expressBillSearch =
+      endpoint('/api/mobile/sales/pos/express/bills/search');
+
   static final Uri posSettlementSubmit =
       endpoint('/api/mobile/pos/settlement/submit');
 
