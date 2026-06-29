@@ -46,5 +46,33 @@ void main() {
       expect(product.stock, 0);
       expect(product.stockLabel, 'Stock: Out');
     });
+
+    test('parses categorySubGroupName and builds displayName', () {
+      final product = Product.fromInventoryJson({
+        'itemId': 27,
+        'itemCode': 'ITEM-00027',
+        'itemName': 'Agragoti',
+        'categorySubGroupName': 'Lungi',
+        'defaultRate': 350.0,
+        'availableQty': 2000,
+      });
+
+      expect(product.name, 'Agragoti');
+      expect(product.subGroupName, 'Lungi');
+      expect(product.displayName, 'Agragoti - Lungi');
+    });
+
+    test('displayName equals name when sub group is absent', () {
+      final product = Product.fromInventoryJson({
+        'itemId': 27,
+        'itemCode': 'ITEM-00027',
+        'itemName': 'Agragoti',
+        'defaultRate': 350.0,
+        'availableQty': 2000,
+      });
+
+      expect(product.subGroupName, isNull);
+      expect(product.displayName, 'Agragoti');
+    });
   });
 }

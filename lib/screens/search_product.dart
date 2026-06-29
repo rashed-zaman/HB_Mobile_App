@@ -424,7 +424,7 @@ class _ProductTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      product.name,
+                      product.displayName,
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
