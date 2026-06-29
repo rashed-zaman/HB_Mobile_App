@@ -42,18 +42,38 @@ class ApiConfig {
   static final Uri deviceBind = endpoint('/api/mobile/pos/devices/bind');
   static final Uri deviceUnbind = endpoint('/api/mobile/pos/devices/unbind');
 
-  static final Uri expressSavePrint =
-      endpoint('/api/mobile/sales/pos/express/bills/save-print');
+  static final Uri expressSavePrint = endpoint(
+    '/api/mobile/sales/pos/express/bills/save-print',
+  );
 
-  static final Uri expressBillSearch =
-      endpoint('/api/mobile/sales/pos/express/bills/search');
+  static final Uri expressBillSearch = endpoint(
+    '/api/mobile/sales/pos/express/bills/search',
+  );
 
-  static final Uri posSettlementSubmit =
-      endpoint('/api/mobile/pos/settlement/submit');
+  /// GET `/api/mobile/sales/pos/express/document-numbers/next`
+  static Uri expressNextDocumentNumbers({
+    String? saleDate,
+    String? terminalCode,
+    int? storeId,
+  }) {
+    return endpoint('/api/mobile/sales/pos/express/document-numbers/next')
+        .replace(
+      queryParameters: <String, String>{
+        if (saleDate != null && saleDate.isNotEmpty) 'saleDate': saleDate,
+        if (terminalCode != null && terminalCode.isNotEmpty)
+          'terminalCode': terminalCode,
+        if (storeId != null && storeId > 0) 'storeId': '$storeId',
+      },
+    );
+  }
 
-  static Uri posSettlementCurrent({required String terminalCode}) =>
-      endpoint('/api/mobile/pos/settlement/current')
-          .replace(queryParameters: {'terminalCode': terminalCode});
+  static final Uri posSettlementSubmit = endpoint(
+    '/api/mobile/pos/settlement/submit',
+  );
+
+  static Uri posSettlementCurrent({required String terminalCode}) => endpoint(
+    '/api/mobile/pos/settlement/current',
+  ).replace(queryParameters: {'terminalCode': terminalCode});
 
   static Uri posSettlementById(int id) =>
       endpoint('/api/mobile/pos/settlement/$id');
@@ -72,8 +92,9 @@ class ApiConfig {
       if (customerType != null && customerType.isNotEmpty)
         'customerType': customerType,
     };
-    return endpoint('/api/mobile/accounts/stakeholders-customer')
-        .replace(queryParameters: params);
+    return endpoint(
+      '/api/mobile/accounts/stakeholders-customer',
+    ).replace(queryParameters: params);
   }
 
   /// GET `/api/mobile/inventory/items?page=&size=&search=`
@@ -87,6 +108,25 @@ class ApiConfig {
         'page': '$page',
         'size': '$size',
         'search': search,
+      },
+    );
+  }
+
+  /// GET `/api/mobile/sales/pos/express/items/search?query=&page=&size=&storeId=`
+  ///
+  /// Returns saleable POS items with store-scoped [availableQty].
+  static Uri expressItemsSearch({
+    required int page,
+    required int size,
+    String query = '',
+    int? storeId,
+  }) {
+    return endpoint('/api/mobile/sales/pos/express/items/search').replace(
+      queryParameters: <String, String>{
+        'page': '$page',
+        'size': '$size',
+        if (query.isNotEmpty) 'query': query,
+        if (storeId != null) 'storeId': '$storeId',
       },
     );
   }

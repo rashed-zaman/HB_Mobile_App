@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/product.dart';
 import 'auth_session.dart';
+import 'bound_device_store.dart';
+import 'pos_sign_in_helper.dart' show resolvePosTerminalCode;
 
 class InventoryException implements Exception {
   const InventoryException(this.message);
@@ -43,10 +45,29 @@ class InventoryService {
     required int size,
     String search = '',
   }) async {
-    final uri = ApiConfig.inventoryItems(page: page, size: size, search: search);
+    final terminalCode = await resolvePosTerminalCode();
+    if (terminalCode == null || terminalCode.trim().isEmpty) {
+      throw const InventoryException(
+        'No POS terminal assigned. Bind device or contact admin.',
+      );
+    }
+
+    final uri = ApiConfig.expressItemsSearch(
+      page: page,
+      size: size,
+      query: search,
+      storeId: AuthSession.defaultStoreId,
+    );
+
+    var deviceId = AuthSession.deviceUuid?.trim();
+    if (deviceId == null || deviceId.isEmpty) {
+      deviceId = await getSavedDeviceIdForLogin();
+    }
 
     final headers = <String, String>{
       'Accept': 'application/json',
+      'X-Pos-Terminal-Code': terminalCode.trim(),
+      if (deviceId != null && deviceId.isNotEmpty) 'X-Device-Id': deviceId,
     };
     final auth = AuthSession.authorizationHeader;
     if (auth != null) {

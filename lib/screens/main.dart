@@ -115,11 +115,7 @@ class _POSScreenState extends State<POSScreen> {
   int get _totalItems =>
       _cartItems.fold(0, (sum, item) => sum + item.quantity);
 
-  String get _invoiceNumber {
-    if (_cartItems.isEmpty) return '---';
-    final now = DateTime.now();
-    return 'INV-${now.year}${now.month.toString().padLeft(2, '0')}${now.millisecondsSinceEpoch % 10000}';
-  }
+  String get _invoiceNumber => _cartItems.isEmpty ? '---' : 'At payment';
 
   void _onSearchChanged(String value) {
     if (value.isEmpty) {

@@ -24,6 +24,85 @@ class ExpressBillingService {
 
   final http.Client _client;
 
+  Future<String?> peekNextBillNumber({
+    required String terminalCode,
+    int? storeId,
+    DateTime? saleDate,
+    String? deviceUuid,
+  }) async {
+    final trimmedTerminal = terminalCode.trim();
+    if (trimmedTerminal.isEmpty) {
+      throw const ExpressBillingException('POS terminal code is required.');
+    }
+
+    var deviceId = deviceUuid?.trim();
+    deviceId ??= AuthSession.deviceUuid?.trim();
+    if (deviceId == null || deviceId.isEmpty) {
+      deviceId = await getSavedDeviceIdForLogin();
+    }
+
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'X-Pos-Terminal-Code': trimmedTerminal,
+      if (deviceId != null && deviceId.isNotEmpty) 'X-Device-Id': deviceId,
+    };
+    final auth = AuthSession.authorizationHeader;
+    if (auth != null) {
+      headers['Authorization'] = auth;
+    }
+
+    final effectiveDate = saleDate ?? DateTime.now();
+    final saleDateParam =
+        '${effectiveDate.year}-${effectiveDate.month.toString().padLeft(2, '0')}-${effectiveDate.day.toString().padLeft(2, '0')}';
+
+    try {
+      final response = await _client
+          .get(
+            ApiConfig.expressNextDocumentNumbers(
+              saleDate: saleDateParam,
+              terminalCode: trimmedTerminal,
+              storeId: storeId,
+            ),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 20));
+
+      final decoded = _decodeObject(response.body);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ExpressBillingException(
+          _readErrorMessage(decoded) ??
+              'Failed to load bill number (${response.statusCode}).',
+        );
+      }
+
+      if (decoded['status'] != true) {
+        throw ExpressBillingException(
+          _readErrorMessage(decoded) ?? 'Failed to load bill number.',
+        );
+      }
+
+      final data = decoded['data'];
+      if (data is Map<String, dynamic>) {
+        final billNo = data['billNo']?.toString().trim();
+        if (billNo != null && billNo.isNotEmpty) {
+          return billNo;
+        }
+      }
+      return null;
+    } on TimeoutException {
+      throw const ExpressBillingException('Request timed out. Please try again.');
+    } on http.ClientException catch (e) {
+      throw ExpressBillingException(
+        'Unable to reach server: ${e.message}',
+      );
+    } on FormatException {
+      throw const ExpressBillingException('Invalid server response.');
+    } on ExpressBillingException {
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> saveAndPrint({
     required Map<String, dynamic> body,
     required String terminalCode,

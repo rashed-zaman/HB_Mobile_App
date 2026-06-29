@@ -214,7 +214,48 @@ class _PaymentScreenState extends State<PaymentScreen> {
   double _discountTotal = 0;
   final List<_PaymentEntry> _payments = [];
   bool _isSubmittingBill = false;
+  String? _previewBillNumber;
+  bool _loadingBillNumber = true;
   final _billingService = ExpressBillingService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreviewBillNumber();
+  }
+
+  Future<void> _loadPreviewBillNumber() async {
+    try {
+      final terminalCode = await resolvePosTerminalCode();
+      if (terminalCode == null || terminalCode.trim().isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _previewBillNumber = widget.invoiceNumber.isNotEmpty
+              ? widget.invoiceNumber
+              : null;
+          _loadingBillNumber = false;
+        });
+        return;
+      }
+      final billNo = await _billingService.peekNextBillNumber(
+        terminalCode: terminalCode,
+        storeId: AuthSession.defaultStoreId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _previewBillNumber = billNo ?? widget.invoiceNumber;
+        _loadingBillNumber = false;
+      });
+    } on ExpressBillingException {
+      if (!mounted) return;
+      setState(() {
+        _previewBillNumber = widget.invoiceNumber.isNotEmpty
+            ? widget.invoiceNumber
+            : null;
+        _loadingBillNumber = false;
+      });
+    }
+  }
 
   double get _netPayable =>
       (widget.totalBill - _discountTotal).clamp(0.0, double.infinity);
@@ -229,8 +270,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool get _hasCashPayment => _payments.any((e) => e.type == _PaymentType.cash);
 
   String get _invoiceLabel {
-    final parts = widget.invoiceNumber.split('-');
-    return '#${parts.last}';
+    if (_loadingBillNumber) return '...';
+    final billNo = _previewBillNumber?.trim();
+    if (billNo == null || billNo.isEmpty || billNo == '---') {
+      return '---';
+    }
+    return billNo;
   }
 
   @override
@@ -309,7 +354,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       'billType': 'EXPRESS',
       ...widget.customer.toBillJson(),
       'saleDate': saleDate,
-      'moreInfo': widget.invoiceNumber,
+      if (_previewBillNumber != null && _previewBillNumber!.isNotEmpty)
+        'moreInfo': _previewBillNumber,
       'discountPercent': 0,
       'discountAmount': double.parse(_discountTotal.toStringAsFixed(2)),
       'allowOverpayment': _receivedAmount > _netPayable,

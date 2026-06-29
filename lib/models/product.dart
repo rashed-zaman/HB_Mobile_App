@@ -47,6 +47,7 @@ class Product {
           ]) ??
           '',
       stock: _intFrom(json, const [
+        'availableQty',
         'stock',
         'quantity',
         'availableQuantity',
@@ -55,6 +56,7 @@ class Product {
         'onHand',
       ]),
       price: _doubleFrom(json, const [
+        'defaultRate',
         'price',
         'salePrice',
         'unitPrice',
