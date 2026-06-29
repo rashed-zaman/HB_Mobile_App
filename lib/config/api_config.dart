@@ -56,8 +56,9 @@ class ApiConfig {
     String? terminalCode,
     int? storeId,
   }) {
-    return endpoint('/api/mobile/sales/pos/express/document-numbers/next')
-        .replace(
+    return endpoint(
+      '/api/mobile/sales/pos/express/document-numbers/next',
+    ).replace(
       queryParameters: <String, String>{
         if (saleDate != null && saleDate.isNotEmpty) 'saleDate': saleDate,
         if (terminalCode != null && terminalCode.isNotEmpty)
