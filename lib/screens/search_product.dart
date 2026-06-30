@@ -138,6 +138,16 @@ class _SearchProductScreenState extends State<SearchProductScreen> {
     // Unfocus keyboard before showing sheet so it doesn't fight the numpad
     _focusNode.unfocus();
 
+    if (product.stockStatus == StockStatus.outOfStock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This item is out of stock and cannot be added to cart.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final qty = await showQuantitySheet(context, product: product);
 
     if (qty == null || !mounted) return; // user dismissed

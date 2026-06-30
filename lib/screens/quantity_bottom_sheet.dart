@@ -64,6 +64,16 @@ class _QuantitySheetState extends State<_QuantitySheet> {
 
   int get _qty => int.tryParse(_raw) ?? 0;
 
+  bool get _enforceStockLimit => widget.product.stock > 0;
+
+  String? get _stockValidationError {
+    if (!_enforceStockLimit || _qty <= 0) return null;
+    if (_qty > widget.product.stock) {
+      return 'Quantity cannot be greater than available stock (${widget.product.stock} Pcs)';
+    }
+    return null;
+  }
+
   void _append(String digit) {
     setState(() {
       if (_raw == '0') {
@@ -88,6 +98,7 @@ class _QuantitySheetState extends State<_QuantitySheet> {
 
   void _increment() {
     final next = _qty + 1;
+    if (_enforceStockLimit && next > widget.product.stock) return;
     if (next.toString().length <= 5) setState(() => _raw = next.toString());
   }
 
@@ -99,7 +110,7 @@ class _QuantitySheetState extends State<_QuantitySheet> {
   void _clear() => setState(() => _raw = '0');
 
   void _submit() {
-    if (_qty <= 0) return;
+    if (_qty <= 0 || _stockValidationError != null) return;
     Navigator.of(context).pop<int>(_qty);
   }
 
@@ -124,6 +135,17 @@ class _QuantitySheetState extends State<_QuantitySheet> {
                 _buildProductInfo(),
                 const SizedBox(height: 20),
                 _buildQuantityRow(),
+                if (_stockValidationError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _stockValidationError!,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFFE53935),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 _buildAddButton(),
               ],
@@ -302,7 +324,7 @@ class _QuantitySheetState extends State<_QuantitySheet> {
   }
 
   Widget _buildAddButton() {
-    final enabled = _qty > 0;
+    final enabled = _qty > 0 && _stockValidationError == null;
     return SizedBox(
       width: double.infinity,
       height: 52,
